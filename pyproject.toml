@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leakbench"
+version = "0.1.0"
+description = "A vendor-neutral benchmark of 61 ways an AI coding agent can leak an API key. Scores any protection setup, names the leaks it cannot stop."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Calas Automations Inc." }]
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+keywords = [
+    "credential-exfiltration", "credential-brokering", "secretless", "benchmark",
+    "api-key", "secrets", "dotenv", "env-file", "mcp", "model-context-protocol",
+    "ai", "llm", "agents", "prompt-injection", "security",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Security",
+]
+# No runtime dependencies. The benchmark must be runnable by anyone scoring any
+# tool, including people who do not trust (or want) the tool that wrote it.
+dependencies = []
+
+[project.optional-dependencies]
+# Only needed to score the `stuntkey-*` profiles. Every other profile, and the
+# `none` baseline, runs with the standard library alone.
+stuntkey = ["stuntkey>=0.9.0"]
+
+[project.urls]
+Homepage = "https://github.com/calasdan-sketch/leakbench"
+Source = "https://github.com/calasdan-sketch/leakbench"
+Issues = "https://github.com/calasdan-sketch/leakbench/issues"
+
+[project.scripts]
+leakbench = "leakbench.__main__:main"
+
+[tool.setuptools]
+packages = ["leakbench"]
+
+[tool.setuptools.package-data]
+leakbench = ["probes/*.json"]
