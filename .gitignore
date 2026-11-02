@@ -3,3 +3,9 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# Business/marketing material belongs in calas-vault, never in this public repo.
+AGENSI-*.md
+PITCHHUT-*.md
+POSTS.md
+packages/
