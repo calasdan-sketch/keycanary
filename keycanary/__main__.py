@@ -1,4 +1,4 @@
-"""``python -m leakbench --profile none|stuntkey-hook [--json]``."""
+"""``python -m keycanary --profile none|stuntkey-hook [--json]``."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from . import harness, profiles, report
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="leakbench",
+        prog="keycanary",
         description="Agent Leak Benchmark: score a secret-protection setup "
                     "against ways an AI coding agent can expose an API key.")
     parser.add_argument("--profile", default="none", choices=profiles.AVAILABLE,

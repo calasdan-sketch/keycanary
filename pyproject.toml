@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "leakbench"
+name = "keycanary"
 version = "0.1.0"
 description = "A vendor-neutral benchmark of 61 ways an AI coding agent can leak an API key. Scores any protection setup, names the leaks it cannot stop."
 readme = "README.md"
@@ -38,15 +38,15 @@ dependencies = []
 stuntkey = ["stuntkey>=0.9.0"]
 
 [project.urls]
-Homepage = "https://github.com/calasdan-sketch/leakbench"
-Source = "https://github.com/calasdan-sketch/leakbench"
-Issues = "https://github.com/calasdan-sketch/leakbench/issues"
+Homepage = "https://github.com/calasdan-sketch/keycanary"
+Source = "https://github.com/calasdan-sketch/keycanary"
+Issues = "https://github.com/calasdan-sketch/keycanary/issues"
 
 [project.scripts]
-leakbench = "leakbench.__main__:main"
+keycanary = "keycanary.__main__:main"
 
 [tool.setuptools]
-packages = ["leakbench"]
+packages = ["keycanary"]
 
 [tool.setuptools.package-data]
-leakbench = ["probes/*.json"]
+keycanary = ["probes/*.json"]

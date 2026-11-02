@@ -56,8 +56,8 @@ def _init_git_history(repo: str, canary: str) -> None:
     so ``git log -p`` / ``git show`` still reveal it. Best-effort: a missing or
     unconfigured git just leaves the repo absent and those probes report n/a."""
     env = dict(os.environ,
-               GIT_AUTHOR_NAME="leakbench", GIT_AUTHOR_EMAIL="lb@example.invalid",
-               GIT_COMMITTER_NAME="leakbench", GIT_COMMITTER_EMAIL="lb@example.invalid")
+               GIT_AUTHOR_NAME="keycanary", GIT_AUTHOR_EMAIL="kc@example.invalid",
+               GIT_COMMITTER_NAME="keycanary", GIT_COMMITTER_EMAIL="kc@example.invalid")
     def run(*args: str) -> None:
         subprocess.run(["git", *args], cwd=repo, env=env,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
@@ -110,7 +110,7 @@ def build() -> Sandbox:
     """Create and plant a fresh sandbox. Caller removes it with :func:`destroy`."""
     # forward slashes so the same path works in sh, python and node string
     # literals (a backslash is an escape there); git bash accepts C:/... too.
-    home = tempfile.mkdtemp(prefix="leakbench-").replace("\\", "/")
+    home = tempfile.mkdtemp(prefix="keycanary-").replace("\\", "/")
     canary = new_canary()
     _plant(home, canary)
     return Sandbox(home=home, canary=canary, env=_child_env(home, canary))

@@ -31,7 +31,7 @@ from typing import Callable
 # (blocked, reason). reason is the profile's own words when it blocks.
 Profile = Callable[[dict], "tuple[bool, str | None]"]
 
-BENCH_SERVICE = "leakbench"
+BENCH_SERVICE = "keycanary"
 BENCH_CAP = 3          # calls_session cap set for the simulated runaway loop
 LOOP_TRIES = 50        # how far the simulated loop would get without a cap
 _HOME_VARS = ("HOME", "USERPROFILE")

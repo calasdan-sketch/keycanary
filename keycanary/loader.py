@@ -1,4 +1,4 @@
-"""Load probe definitions from leakbench/probes/*.json.
+"""Load probe definitions from keycanary/probes/*.json.
 
 Each JSON file holds a list of probes (grouped by category). A probe is a dict:
 
