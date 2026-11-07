@@ -35,7 +35,7 @@ _SUITE_BY_FILE = {"encoded": "encoded", "controls": "control"}
 SUITES = ("core", "encoded", "control")
 # The pinned probe count per suite. Changing a probe file means changing this
 # number in the same commit, in plain view of a reviewer.
-EXPECTED = {"core": 61, "encoded": 8, "control": 10}
+EXPECTED = {"core": 70, "encoded": 17, "control": 14}
 CHECKS = ("canary_in_output", "write_tamper", "no_guard", "control")
 
 

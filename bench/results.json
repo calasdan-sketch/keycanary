@@ -1,0 +1,103 @@
+{
+  "keycanary": "0.2.0",
+  "probe_set_sha256": "74cf05aa32aa3aec8aaa1b429240a47957ee21d18382d6c1fa24d71d0b1be56d",
+  "suites": {
+    "core": 70,
+    "encoded": 17,
+    "control": 14
+  },
+  "platform": "linux",
+  "python": "3.13.18",
+  "profiles": {
+    "none": {
+      "core": {
+        "blocked": 0,
+        "masked": 0,
+        "leaked": 61,
+        "n/a": 9
+      },
+      "encoded_leaked": 17,
+      "encoded_total": 17,
+      "controls": {
+        "ok": 14,
+        "overblocked": 0,
+        "altered": 0,
+        "n/a": 0
+      },
+      "rankable": true,
+      "seconds": 0.9
+    },
+    "deny-all": {
+      "core": {
+        "blocked": 70,
+        "masked": 0,
+        "leaked": 0,
+        "n/a": 0
+      },
+      "encoded_leaked": 0,
+      "encoded_total": 17,
+      "controls": {
+        "ok": 0,
+        "overblocked": 14,
+        "altered": 0,
+        "n/a": 0
+      },
+      "rankable": false,
+      "seconds": 0.1
+    },
+    "mask-all": {
+      "core": {
+        "blocked": 0,
+        "masked": 55,
+        "leaked": 6,
+        "n/a": 9
+      },
+      "encoded_leaked": 0,
+      "encoded_total": 17,
+      "controls": {
+        "ok": 1,
+        "overblocked": 0,
+        "altered": 13,
+        "n/a": 0
+      },
+      "rankable": false,
+      "seconds": 1.1
+    },
+    "exec: naive regex hook": {
+      "core": {
+        "blocked": 25,
+        "masked": 0,
+        "leaked": 37,
+        "n/a": 8
+      },
+      "encoded_leaked": 1,
+      "encoded_total": 17,
+      "controls": {
+        "ok": 12,
+        "overblocked": 2,
+        "altered": 0,
+        "n/a": 0
+      },
+      "rankable": false,
+      "seconds": 7.0
+    },
+    "exec: literal masker": {
+      "core": {
+        "blocked": 0,
+        "masked": 55,
+        "leaked": 6,
+        "n/a": 9
+      },
+      "encoded_leaked": 17,
+      "encoded_total": 17,
+      "controls": {
+        "ok": 14,
+        "overblocked": 0,
+        "altered": 0,
+        "n/a": 0
+      },
+      "rankable": true,
+      "seconds": 9.9
+    }
+  }
+}

@@ -21,8 +21,8 @@ Claude Code hook (``stuntkey.hook.check``) twice, as a real install does:
 PreToolUse before the call and PostToolUse on its output. ``stuntkey-full`` is
 the hook plus StuntKey's spending caps.
 
-Other tools are welcome: add a profile here and send a PR (README: "Adding a
-profile").
+Other tools are welcome: add a profile here and send a PR (README: "Scoring
+your own tool").
 """
 
 from __future__ import annotations
@@ -31,8 +31,9 @@ import contextlib
 import json
 import os
 import shlex
-import subprocess
 from typing import Callable
+
+from . import _proc
 
 # (blocked, reason). reason is the profile's own words when it blocks.
 Profile = Callable[[dict], "tuple[bool, str | None]"]
@@ -64,63 +65,106 @@ def _load_mask_all() -> Profile:
 
 
 EXEC_TIMEOUT = 10  # seconds per hook call
+EXEC_MAX_OUTPUT = 1_000_000  # bytes of hook stdout/stderr accepted per call
 _EXEC_KEEP = ("PATH", "SYSTEMROOT", "SystemRoot", "COMSPEC", "PATHEXT", "WINDIR",
               "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL")
+
+
+def _accept_output(new: object, response: dict) -> dict:
+    """Claude Code ignores a replacement that does not match the tool's output
+    schema and uses the original output (hooks reference, PostToolUse). Same
+    here: wrong keys or wrong value types leave the original output in place."""
+    if (isinstance(new, dict) and set(new) >= set(response)
+            and all(isinstance(new.get(k), str) for k in ("stdout", "stderr"))
+            and all(isinstance(new.get(k), bool) for k in ("interrupted", "isImage") if k in response)):
+        return new
+    return response
+
+
+def _split_command(command: str) -> list[str]:
+    """Split without a shell. On Windows ``shlex(posix=False)`` keeps the quotes
+    around "C:\\Program Files\\x.exe"; they are removed so the path launches."""
+    argv = shlex.split(command, posix=(os.name != "nt"))
+    if os.name == "nt":
+        argv = [a[1:-1] if len(a) >= 2 and a[0] == a[-1] and a[0] in "\"'" else a
+                for a in argv]
+    return argv
 
 
 def _load_exec(command: str) -> Profile:
     """Score any external tool that implements the Claude Code hook protocol.
 
     ``command`` is split with shlex (no shell is involved) and run once per
-    event. It receives one JSON object on stdin:
+    event. It receives one JSON object on stdin, with the common fields Claude
+    Code sends (``session_id``, ``transcript_path``, ``cwd``, ``permission_mode``,
+    ``tool_use_id``) plus:
 
         {"hook_event_name": "PreToolUse",  "tool_name": ..., "tool_input": {...}}
         {"hook_event_name": "PostToolUse", "tool_name": ..., "tool_input": {...},
          "tool_response": {"stdout", "stderr", "interrupted", "isImage"}}
 
     It blocks a call by exiting 2, or by printing
-    ``{"hookSpecificOutput": {"permissionDecision": "deny"}}``. For PostToolUse it
-    replaces the output by printing ``{"hookSpecificOutput": {"updatedToolOutput":
-    {...same shape...}}}``. Any other exit code, a timeout, or unparseable
-    stdout aborts the run with ProfileError rather than scoring as a pass.
+    ``{"hookSpecificOutput": {"permissionDecision": "deny"}}`` (the deprecated
+    top-level ``{"decision": "block"}`` is honoured as deny, as Claude Code does).
+    ``ask`` and ``defer`` hand the decision to a person, so they are NOT counted
+    as blocked; the result says so. For PostToolUse it replaces the output by
+    printing ``{"hookSpecificOutput": {"updatedToolOutput": {...same shape...}}}``.
+    Any other exit code, a timeout, oversize output or unparseable stdout aborts
+    the run with ProfileError rather than scoring as a pass. (Claude Code itself
+    treats those as non-blocking and lets the call run; aborting is the strict,
+    fail-closed choice for a benchmark.)
 
     The hook runs with a minimal environment: HOME and USERPROFILE point at the
-    sandbox, and KEYCANARY_CANARY holds this run's canary so a tool that must be
-    told the secret (to fingerprint it) can be.
+    sandbox, KEYCANARY_CANARY holds this run's canary so a tool that must be
+    told the secret (to fingerprint it) can be, and CLAUDE_PROJECT_DIR is the
+    sandbox, as Claude Code exports it.
     """
     try:
-        argv = shlex.split(command, posix=(os.name != "nt"))
+        argv = _split_command(command)
     except ValueError as exc:
         raise ProfileError(f"cannot parse exec command: {exc}") from exc
     if not argv:
         raise ProfileError("exec: needs a command, e.g. exec:'my-hook --flag'")
-    state: dict = {"env": None}
+    state: dict = {"env": None, "sbx": None, "n": 0}
 
     def prepare(sbx) -> None:  # type: ignore[no-untyped-def]
         env = {k: os.environ[k] for k in _EXEC_KEEP if k in os.environ}
         env.update(HOME=sbx.home, USERPROFILE=sbx.home, KEYCANARY_CANARY=sbx.canary,
-                   KEYCANARY_SANDBOX=sbx.home)
+                   KEYCANARY_SANDBOX=sbx.home, CLAUDE_PROJECT_DIR=sbx.home)
         state["env"] = env
+        state["sbx"] = sbx
+        profile.asked = None  # type: ignore[attr-defined]
+
+    def common() -> dict:
+        state["n"] += 1
+        home = state["sbx"].home if state["sbx"] else ""
+        return {"session_id": "keycanary", "cwd": home, "permission_mode": "default",
+                "transcript_path": f"{home}/.keycanary-transcript.jsonl",
+                "tool_use_id": f"toolu_keycanary_{state['n']:04d}"}
 
     def call(event: dict) -> dict | None:
         try:
-            proc = subprocess.run(argv, input=json.dumps(event), capture_output=True,
-                                  text=True, timeout=EXEC_TIMEOUT, env=state["env"],
-                                  errors="replace")
+            done = _proc.run(argv, input_text=json.dumps({**common(), **event}),
+                             timeout=EXEC_TIMEOUT, env=state["env"], cap=EXEC_MAX_OUTPUT)
         except FileNotFoundError as exc:
             raise ProfileError(f"exec command not found: {argv[0]}") from exc
-        except (subprocess.TimeoutExpired, OSError) as exc:
+        except OSError as exc:
             raise ProfileError(f"exec command failed: {type(exc).__name__}") from exc
-        if proc.returncode == 2:
-            return {"_exit2": (proc.stderr or proc.stdout or "denied").strip()}
-        if proc.returncode != 0:
-            raise ProfileError(f"exec command exited {proc.returncode}: "
-                               f"{(proc.stderr or '').strip()[:120]}")
-        if not proc.stdout.strip():
+        if done.timed_out:
+            raise ProfileError(f"exec command failed: timed out after {EXEC_TIMEOUT}s")
+        if done.truncated:
+            raise ProfileError("exec command printed more than "
+                               f"{EXEC_MAX_OUTPUT} bytes; refusing to score it")
+        if done.returncode == 2:
+            return {"_exit2": (done.stderr or done.stdout or "denied").strip()}
+        if done.returncode != 0:
+            raise ProfileError(f"exec command exited {done.returncode}: "
+                               f"{(done.stderr or '').strip()[:120]}")
+        if not done.stdout.strip():
             return None
         try:
-            data = json.loads(proc.stdout)
-        except ValueError as exc:
+            data = json.loads(done.stdout)
+        except (ValueError, RecursionError) as exc:
             raise ProfileError("exec command printed non-JSON on stdout") from exc
         if not isinstance(data, dict):
             raise ProfileError("exec command printed JSON that is not an object")
@@ -133,8 +177,15 @@ def _load_exec(command: str) -> Profile:
         if "_exit2" in out:
             return True, out["_exit2"].splitlines()[0][:120] if out["_exit2"] else "denied"
         spec = out.get("hookSpecificOutput")
-        if isinstance(spec, dict) and spec.get("permissionDecision") == "deny":
-            return True, str(spec.get("permissionDecisionReason", "denied"))[:120]
+        decision, reason = None, None
+        if isinstance(spec, dict) and "permissionDecision" in spec:
+            decision, reason = spec.get("permissionDecision"), spec.get("permissionDecisionReason")
+        elif out.get("decision") in ("block", "approve"):  # deprecated PreToolUse form
+            decision, reason = ("deny" if out["decision"] == "block" else "allow"), out.get("reason")
+        if decision == "deny":
+            return True, str(reason or "denied")[:120]
+        if decision in ("ask", "defer"):
+            profile.asked = str(reason or decision)[:80]  # type: ignore[attr-defined]
         return False, None
 
     def post(payload: dict, response: dict) -> dict:
@@ -143,11 +194,11 @@ def _load_exec(command: str) -> Profile:
             return response
         spec = out.get("hookSpecificOutput")
         new = spec.get("updatedToolOutput") if isinstance(spec, dict) else None
-        # Claude Code ignores a replacement that is not the tool's own shape
-        return new if isinstance(new, dict) and set(new) >= set(response) else response
+        return _accept_output(new, response)
 
     profile.prepare = prepare  # type: ignore[attr-defined]
     profile.post = post        # type: ignore[attr-defined]
+    profile.asked = None       # type: ignore[attr-defined]
     return profile
 
 
@@ -212,8 +263,7 @@ def _load_stuntkey_hook() -> Profile:
         if status != 0 or not out.strip():
             return response
         new = json.loads(out).get("hookSpecificOutput", {}).get("updatedToolOutput")
-        # Claude Code ignores a replacement that is not the tool's own shape
-        return new if isinstance(new, dict) and set(new) >= set(response) else response
+        return _accept_output(new, response)
 
     profile.prepare = prepare  # type: ignore[attr-defined]
     profile.post = post        # type: ignore[attr-defined]

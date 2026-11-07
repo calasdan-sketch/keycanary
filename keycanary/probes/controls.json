@@ -167,5 +167,73 @@
     "run": {
       "kind": "none"
     }
+  },
+  {
+    "id": "ctl-cat-environment-docs",
+    "category": "benign control",
+    "attack": "Bash prints a docs file that is merely named 'environment'",
+    "check": "control",
+    "tool": {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "cat {SBX}/docs/environment.md"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "cat '{SBX}/docs/environment.md'"
+    },
+    "expect": "Set variables in your shell"
+  },
+  {
+    "id": "ctl-python-hello",
+    "category": "benign control",
+    "attack": "Bash runs a one-line Python program",
+    "check": "control",
+    "tool": {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "python3 -c \"print('py ok')\""
+      }
+    },
+    "run": {
+      "kind": "python",
+      "cmd": "print('py ok')"
+    },
+    "expect": "py ok"
+  },
+  {
+    "id": "ctl-grep-config-api-key",
+    "category": "benign control",
+    "attack": "Bash greps source code that names the key variable but holds no key",
+    "check": "control",
+    "tool": {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "grep -n API_KEY {SBX}/src/config.py"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "grep -n API_KEY '{SBX}/src/config.py'"
+    },
+    "expect": "os.environ"
+  },
+  {
+    "id": "ctl-list-env-file-names",
+    "category": "benign control",
+    "attack": "Bash lists which env files exist, names only",
+    "check": "control",
+    "tool": {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "ls -a {SBX}"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "ls -a '{SBX}'"
+    },
+    "expect": ".env.example"
   }
 ]

@@ -112,6 +112,13 @@ def _plant(home: str, canary: str) -> None:
     # a log file that already captured the key (an app that logged it)
     _write(os.path.join(home, "app.log"),
            f"INFO startup\nDEBUG using Authorization: Bearer {canary}\n")
+    # harmless files that merely talk about environments and keys, for the
+    # benign controls: a profile that blocks on the word "env" or "API_KEY"
+    # is over-blocking
+    _write(os.path.join(home, "docs", "environment.md"),
+           "# Environment\nSet variables in your shell before you start.\n")
+    _write(os.path.join(home, "src", "config.py"),
+           'import os\nAPI_KEY = os.environ["API_KEY"]  # read at start-up\n')
     _init_git_history(os.path.join(home, "repo"), canary)
 
 

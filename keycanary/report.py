@@ -25,12 +25,19 @@ FORMATS = ("table", "json", "markdown", "junit", "sarif")
 # reason string is untrusted text and is printed to a terminal and into CI
 # annotations, so none of these may reach the output.
 _UNSAFE = re.compile(
-    "[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff\ufffe\uffff]")
+    "[\x00-\x08\x0b-\x1f\x7f-\x9f"          # C0/C1 control (incl. ESC, CSI)
+    "\u00ad\u034f\u061c\u115f\u1160\u180e"   # soft hyphen, joiners, fillers
+    "\u200b-\u200f\u2028-\u202e\u2060-\u206f"  # zero-width, line/para sep, bidi
+    "\u2800\u3164\ufe00-\ufe0f\ufeff\uffa0"   # blank braille/hangul, variation selectors
+    "\ufff0-\uffff"                            # specials, noncharacters
+    "\ud800-\udfff"                            # lone surrogates (cannot be printed)
+    "\U000e0000-\U000e0fff]")                  # tag characters and variation selectors
 
 
 def clean(text: object) -> str:
     """Make untrusted text safe to print: newlines collapse to a space and every
-    control, bidi or zero-width character becomes ``?``."""
+    control, bidi, zero-width, invisible-tag or unprintable character becomes
+    ``?``. The result always encodes as UTF-8."""
     return _UNSAFE.sub("?", str(text).replace("\r", " ").replace("\n", " ").replace("\t", " "))
 
 
@@ -73,21 +80,32 @@ def metrics(results: list[Result]) -> dict:
     }
 
 
-def meta(probe_hash: str | None = None, repeat: int = 1) -> dict:
+def by_category(results: list[Result]) -> dict[str, dict[str, int]]:
+    """Per-family counts over the leak probes, so one weak family is not hidden
+    inside a good overall number."""
+    out: dict[str, dict[str, int]] = {}
+    for r in _leak(results):
+        row = out.setdefault(r.category, {s: 0 for s in STATUSES})
+        row[r.status] += 1
+    return dict(sorted(out.items()))
+
+
+def meta(probe_hash: str | None = None, repeat: int = 1, partial: bool = False) -> dict:
     return {"keycanary": __version__, "probe_set_sha256": probe_hash,
             "python": platform.python_version(), "platform": sys.platform,
-            "repeat": repeat}
+            "repeat": repeat, "partial": partial}
 
 
 def to_json(results: list[Result], profile: str, *, probe_hash: str | None = None,
-            unstable: list[str] | None = None, repeat: int = 1) -> str:
+            unstable: list[str] | None = None, repeat: int = 1, partial: bool = False) -> str:
     return json.dumps({
         "profile": profile,
         "total": len(results),
         "summary": summary(results),
         "controls": control_summary(results),
         "metrics": metrics(results),
-        "meta": meta(probe_hash, repeat),
+        "by_category": by_category(results),
+        "meta": meta(probe_hash, repeat, partial),
         "unstable": unstable or [],
         "results": [{**r.__dict__, "detail": clean(r.detail)} for r in results],
     }, indent=2)
@@ -125,7 +143,11 @@ def to_table(results: list[Result], profile: str) -> str:
     lines += ["", "  ".join(f"{k}={v}" for k, v in s.items())]
     if _controls(results):
         lines.append("controls: " + "  ".join(f"{k}={v}" for k, v in control_summary(results).items()))
-    lines += [_headline(results)]
+    lines += [_headline(results), "", "by family (stopped/applicable):"]
+    for cat, row in by_category(results).items():
+        app = row["blocked"] + row["masked"] + row["leaked"]
+        lines.append(f"  {_col(clean(cat), 22)} {row['blocked'] + row['masked']}/{app}"
+                     + (f"   ({row['n/a']} n/a)" if row["n/a"] else ""))
     gaps = sorted(clean(r.probe_id) for r in _leak(results) if r.status == "leaked")
     if gaps:
         lines += ["", f"GAPS (leaked, {len(gaps)}): " + ", ".join(gaps)]

@@ -36,7 +36,7 @@ class PinnedSet(unittest.TestCase):
         probes = loader.load()
         for suite, want in loader.EXPECTED.items():
             self.assertEqual(sum(p.suite == suite for p in probes), want, suite)
-        self.assertEqual(loader.EXPECTED["core"], 61)
+        self.assertEqual(loader.EXPECTED["core"], 70)
 
     def test_deleting_a_probe_fails_closed(self):
         with tempfile.TemporaryDirectory() as d:
@@ -65,7 +65,8 @@ class PinnedSet(unittest.TestCase):
             if p.check not in ("write_tamper", "control"):
                 self.assertNotEqual(p.tool["tool_name"], "Write", p.id)
             for pre in p.pre:
-                self.assertEqual(pre["tool_name"], "Write", p.id)
+                # setup steps an agent would emit first: a file write or a shell command
+                self.assertIn(pre["tool_name"], ("Write", "Bash"), p.id)
 
     def test_controls_have_expectations(self):
         for p in loader.load():
@@ -121,12 +122,12 @@ class Scoring(unittest.TestCase):
         self.assertEqual(s["blocked"] + s["masked"], 0)
         self.assertGreater(s["leaked"], 40)
         self.assertTrue(m["rankable"])
-        self.assertEqual(report.control_summary(results)["ok"], 10)
+        self.assertEqual(report.control_summary(results)["ok"], 14)
 
     def test_deny_all_cannot_win(self):
         results = harness.run("deny-all")
         self.assertEqual(report.summary(results)["leaked"], 0)
-        self.assertEqual(report.control_summary(results)["overblocked"], 10)
+        self.assertEqual(report.control_summary(results)["overblocked"], 14)
         self.assertFalse(report.metrics(results)["rankable"])
         self.assertIn("NOT RANKABLE", report.to_table(results, "deny-all"))
 
@@ -196,7 +197,7 @@ class ExecProfile(unittest.TestCase):
         hook = f'exec:{sys.executable} -c "import sys; sys.stderr.write(\'nope\'); sys.exit(2)"'
         results = harness.run(hook)
         self.assertEqual(report.summary(results)["leaked"], 0)
-        self.assertEqual(report.control_summary(results)["overblocked"], 10)
+        self.assertEqual(report.control_summary(results)["overblocked"], 14)
 
     def test_hook_receives_canary_and_sandbox_home(self):
         code = ("import os,sys,json;json.load(sys.stdin);"

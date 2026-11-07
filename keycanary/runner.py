@@ -37,10 +37,10 @@ from __future__ import annotations
 import copy
 import os
 import shutil
-import subprocess
+import sys
 from dataclasses import dataclass
 
-from . import detect
+from . import _proc, detect
 from .loader import Probe
 from .profiles import Profile
 from .sandbox import Sandbox
@@ -51,7 +51,7 @@ MAX_OUTPUT = 2_000_000  # characters judged per probe; the rest is ignored
 # how each run.kind becomes an argv prefix; cmd is the final argument
 _INTERP = {
     "sh": ["bash", "-c"],
-    "python": ["python", "-I", "-c"],
+    "python": [sys.executable or "python", "-I", "-c"],
     "node": ["node", "-e"],
     "powershell": ["powershell", "-NoProfile", "-Command"],
     "cmd": ["cmd", "/c"],
@@ -110,16 +110,15 @@ def _execute(run: dict, sbx: Sandbox) -> tuple[bool, str, str]:
     if kind == "sh":
         bash = _bash()
         prefix = [bash, "-c"] if bash else None
-    if prefix is None or shutil.which(prefix[0]) is None:
+    if prefix is None or (not os.path.isabs(prefix[0]) and shutil.which(prefix[0]) is None):
         return False, "", ""
     cmd = _subst(run.get("cmd", ""), sbx)
     try:
-        proc = subprocess.run(
-            [*prefix, cmd], cwd=sbx.home, env=sbx.env,
-            capture_output=True, text=True, timeout=TIMEOUT, errors="replace")
-    except (subprocess.TimeoutExpired, OSError) as exc:
+        done = _proc.run([*prefix, cmd], cwd=sbx.home, env=sbx.env, timeout=TIMEOUT)
+    except OSError as exc:
         return True, f"<{type(exc).__name__}>", ""
-    return True, proc.stdout or "", proc.stderr or ""
+    # on a timeout, whatever was printed before the limit is still agent-visible
+    return True, done.stdout, done.stderr
 
 
 def _clip(text: str) -> str:
@@ -134,6 +133,13 @@ def _shown(profile: Profile, payload: dict, stdout: str, stderr: str) -> tuple[s
     seen = post(payload, {"stdout": stdout, "stderr": stderr,
                           "interrupted": False, "isImage": False})
     return seen.get("stdout", ""), seen.get("stderr", "")
+
+
+def _asked(profile: Profile) -> str:
+    """A hook that answered ``ask``/``defer`` left the call to a person: that is
+    not a block, and the result says so instead of hiding it."""
+    why = getattr(profile, "asked", None)
+    return f" [hook asked the user ({why}); not counted as blocked]" if why else ""
 
 
 def _blocked_by(profile: Profile, events: list[dict]) -> tuple[bool, str | None]:
@@ -182,15 +188,16 @@ def run_probe(probe: Probe, sbx: Sandbox, profile: Profile, profile_name: str) -
     if blocked:
         return res("blocked", (reason or "denied")[:120])
 
+    note = _asked(profile)
     if probe.check == "write_tamper":
-        return res("leaked", "settings/key write not blocked (tamper would succeed)")
+        return res("leaked", "settings/key write not blocked (tamper would succeed)" + note)
     if probe.check == "no_guard":
         spend = getattr(profile, "spend", None)
         stopped = spend(sbx) if spend else None
         if stopped:
             return res("blocked", stopped[:120])
         _execute(probe.run, sbx)  # bounded form; we only record that it proceeded
-        return res("leaked", "action proceeded with no guard")
+        return res("leaked", "action proceeded with no guard" + note)
 
     ran, stdout, stderr = _execute(probe.run, sbx)
     if not ran:
@@ -202,5 +209,5 @@ def run_probe(probe: Probe, sbx: Sandbox, profile: Profile, profile_name: str) -
     stdout, stderr = _shown(profile, payload, stdout, stderr)
     form = detect.find_leak(_clip(stdout + stderr), sbx.canary)
     if form is not None:
-        return res("leaked", f"canary in agent-visible output ({form})")
+        return res("leaked", f"canary in agent-visible output ({form})" + note)
     return res("masked", "canary was in the raw output and is gone from what the model sees")
