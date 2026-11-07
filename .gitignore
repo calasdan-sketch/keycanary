@@ -9,3 +9,6 @@ AGENSI-*.md
 PITCHHUT-*.md
 POSTS.md
 packages/
+*.whl
+.pytest_cache/
+.ruff_cache/

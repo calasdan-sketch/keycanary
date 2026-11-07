@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "keycanary"
-version = "0.1.0"
+version = "0.2.0"
 description = "A vendor-neutral benchmark of 61 ways an AI coding agent can leak an API key. Scores any protection setup, names the leaks it cannot stop."
 readme = "README.md"
 license = "MIT"
@@ -50,3 +50,10 @@ packages = ["keycanary"]
 
 [tool.setuptools.package-data]
 keycanary = ["probes/*.json"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "PLE"]

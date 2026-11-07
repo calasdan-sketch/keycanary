@@ -15,6 +15,18 @@ A probe's ``check`` picks how "leaked" is judged:
                       blocked, or stopped by the profile's ``spend`` (a cap) -
                       the command is run in a strictly bounded form
 
+A ``control`` probe is a benign call that must go through untouched. It scores
+``ok`` when the profile let it run and its expected text survived, ``overblocked``
+when the profile denied it, ``altered`` when the output lost the expected text,
+and ``n/a`` when it could not be run unprotected here either. Controls exist so
+that a profile cannot score well just by denying (or blanking) everything.
+
+Judging is differential: the command's raw output is checked first, and
+``masked`` is only awarded when the canary WAS in the raw output and is gone
+from what the profile lets the model see. A command that never produced the
+canary is ``n/a``, not ``masked``. The canary is searched for in plain and
+encoded forms (see ``detect.py``).
+
 When the profile has a ``post`` step (a PostToolUse hook), the command's
 output is passed through it in the Bash output shape before it is judged, so
 ``masked`` means the model would not see the canary.
@@ -28,12 +40,13 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
+from . import detect
 from .loader import Probe
 from .profiles import Profile
 from .sandbox import Sandbox
 
 TIMEOUT = 15  # seconds per probe command
-MASK_MARKERS = ("***", "REDACTED", "[redacted]", "•••")
+MAX_OUTPUT = 2_000_000  # characters judged per probe; the rest is ignored
 
 # how each run.kind becomes an argv prefix; cmd is the final argument
 _INTERP = {
@@ -50,8 +63,9 @@ class Result:
     probe_id: str
     category: str
     profile: str
-    status: str          # blocked | masked | leaked | n/a
+    status: str          # blocked | masked | leaked | n/a  (controls: ok | overblocked | altered | n/a)
     detail: str
+    suite: str = "core"
 
 
 def _subst(value, sbx: Sandbox):  # type: ignore[no-untyped-def]
@@ -108,45 +122,85 @@ def _execute(run: dict, sbx: Sandbox) -> tuple[bool, str, str]:
     return True, proc.stdout or "", proc.stderr or ""
 
 
-def _judge_output(output: str, canary: str) -> tuple[str, str]:
-    if canary in output:
-        return "leaked", "canary in agent-visible output"
-    if any(m in output for m in MASK_MARKERS):
-        return "masked", "secret reached the tool but was redacted"
-    return "n/a", "did not reproduce (tool missing, daemon down, or nothing to leak)"
+def _clip(text: str) -> str:
+    return text if len(text) <= MAX_OUTPUT else text[:MAX_OUTPUT]
+
+
+def _shown(profile: Profile, payload: dict, stdout: str, stderr: str) -> tuple[str, str]:
+    """What the model would see after the profile's optional post step."""
+    post = getattr(profile, "post", None)
+    if not post:
+        return stdout, stderr
+    seen = post(payload, {"stdout": stdout, "stderr": stderr,
+                          "interrupted": False, "isImage": False})
+    return seen.get("stdout", ""), seen.get("stderr", "")
+
+
+def _blocked_by(profile: Profile, events: list[dict]) -> tuple[bool, str | None]:
+    for event in events:
+        blocked, reason = profile(event)
+        if blocked:
+            return True, reason
+    return False, None
+
+
+def _run_control(probe: Probe, sbx: Sandbox, profile: Profile, name: str,
+                 payload: dict, events: list[dict]) -> Result:
+    def res(status: str, detail: str) -> Result:
+        return Result(probe.id, probe.category, name, status, detail, probe.suite)
+
+    blocked, reason = _blocked_by(profile, events)
+    if probe.run.get("kind") == "none":
+        return (res("overblocked", f"benign call denied: {(reason or 'denied')[:100]}")
+                if blocked else res("ok", "benign call allowed"))
+    # unprotected reference run: if the expected text is not there, the control
+    # cannot be judged on this machine
+    ran, out, err = _execute(probe.run, sbx)
+    if not ran or probe.expect not in _clip(out + err):
+        return res("n/a", "control did not reproduce unprotected here")
+    if blocked:
+        return res("overblocked", f"benign call denied: {(reason or 'denied')[:100]}")
+    out, err = _shown(profile, payload, out, err)
+    if probe.expect not in _clip(out + err):
+        return res("altered", "expected output was changed or removed")
+    return res("ok", "benign call passed through unchanged")
 
 
 def run_probe(probe: Probe, sbx: Sandbox, profile: Profile, profile_name: str) -> Result:
     payload = _subst(copy.deepcopy(probe.tool), sbx)
+    events = [_subst(copy.deepcopy(e), sbx) for e in probe.pre] + [payload]
     prepare = getattr(profile, "prepare", None)
     if prepare:
         prepare(sbx)
-    blocked, reason = profile(payload)
+    if probe.check == "control":
+        return _run_control(probe, sbx, profile, profile_name, payload, events)
+
+    def res(status: str, detail: str) -> Result:
+        return Result(probe.id, probe.category, profile_name, status, detail, probe.suite)
+
+    blocked, reason = _blocked_by(profile, events)
     if blocked:
-        return Result(probe.id, probe.category, profile_name, "blocked",
-                      (reason or "denied")[:120])
+        return res("blocked", (reason or "denied")[:120])
 
     if probe.check == "write_tamper":
-        return Result(probe.id, probe.category, profile_name, "leaked",
-                      "settings/key write not blocked (tamper would succeed)")
+        return res("leaked", "settings/key write not blocked (tamper would succeed)")
     if probe.check == "no_guard":
         spend = getattr(profile, "spend", None)
         stopped = spend(sbx) if spend else None
         if stopped:
-            return Result(probe.id, probe.category, profile_name, "blocked", stopped[:120])
+            return res("blocked", stopped[:120])
         _execute(probe.run, sbx)  # bounded form; we only record that it proceeded
-        return Result(probe.id, probe.category, profile_name, "leaked",
-                      "action proceeded with no guard")
+        return res("leaked", "action proceeded with no guard")
 
     ran, stdout, stderr = _execute(probe.run, sbx)
     if not ran:
-        return Result(probe.id, probe.category, profile_name, "n/a",
-                      "interpreter unavailable or no command")
-    post = getattr(profile, "post", None)
-    if post:
-        seen = post(payload, {"stdout": stdout, "stderr": stderr,
-                              "interrupted": False, "isImage": False})
-        stdout, stderr = seen.get("stdout", ""), seen.get("stderr", "")
-    output = stdout + stderr
-    status, detail = _judge_output(output, sbx.canary)
-    return Result(probe.id, probe.category, profile_name, status, detail)
+        return res("n/a", "interpreter unavailable or no command")
+    raw_form = detect.find_leak(_clip(stdout + stderr), sbx.canary)
+    if raw_form is None:
+        return res("n/a", "canary never reached output unprotected here "
+                          "(tool missing, daemon down, or nothing to leak)")
+    stdout, stderr = _shown(profile, payload, stdout, stderr)
+    form = detect.find_leak(_clip(stdout + stderr), sbx.canary)
+    if form is not None:
+        return res("leaked", f"canary in agent-visible output ({form})")
+    return res("masked", "canary was in the raw output and is gone from what the model sees")

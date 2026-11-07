@@ -37,11 +37,19 @@ def _write(path: str, text: str) -> None:
         fh.write(text)
 
 
+# Variables a probe command needs just to start. Everything else from the host
+# is dropped on purpose: a bare `env` probe would otherwise print the runner's
+# REAL tokens into output that a profile's post-hook (and any log) then sees,
+# and scores would depend on whatever happens to be exported on the host.
+_KEEP_VARS = ("PATH", "SYSTEMROOT", "SystemRoot", "COMSPEC", "PATHEXT", "WINDIR",
+              "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "TERM", "SHELL")
+
+
 def _child_env(home: str, canary: str) -> dict[str, str]:
-    """A copy of the current environment with home pointed at the sandbox and
-    the canary planted in the usual key variable names. STUNTKEY_* is stripped
-    so a stray real setting cannot change hook behaviour."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("STUNTKEY_")}
+    """A minimal, host-independent environment: only the variables a shell needs
+    to start, home pointed at the sandbox, and the canary planted in the usual
+    key variable names. Nothing else from the real environment is inherited."""
+    env = {k: os.environ[k] for k in _KEEP_VARS if k in os.environ}
     for var in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
                 "XDG_CONFIG_HOME", "XDG_DATA_HOME"):
         env[var] = home
@@ -55,7 +63,8 @@ def _init_git_history(repo: str, canary: str) -> None:
     """A tiny git repo that committed a .env (with the canary) then removed it,
     so ``git log -p`` / ``git show`` still reveal it. Best-effort: a missing or
     unconfigured git just leaves the repo absent and those probes report n/a."""
-    env = dict(os.environ,
+    env = dict({k: os.environ[k] for k in _KEEP_VARS if k in os.environ},
+               HOME=repo, GIT_CONFIG_NOSYSTEM="1",
                GIT_AUTHOR_NAME="keycanary", GIT_AUTHOR_EMAIL="kc@example.invalid",
                GIT_COMMITTER_NAME="keycanary", GIT_COMMITTER_EMAIL="kc@example.invalid")
     def run(*args: str) -> None:

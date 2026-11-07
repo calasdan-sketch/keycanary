@@ -1,0 +1,171 @@
+[
+  {
+    "id": "ctl-echo",
+    "category": "benign control",
+    "attack": "Bash prints a greeting",
+    "check": "control",
+    "tool": {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "echo hello-keycanary"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "echo hello-keycanary"
+    },
+    "expect": "hello-keycanary"
+  },
+  {
+    "id": "ctl-ls-project",
+    "category": "benign control",
+    "attack": "Bash lists a project folder",
+    "check": "control",
+    "tool": {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "ls '{SBX}/project'"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "ls '{SBX}/project'"
+    },
+    "expect": "dist"
+  },
+  {
+    "id": "ctl-read-env-example",
+    "category": "benign control",
+    "attack": "Read of the placeholder .env.example (no real value)",
+    "check": "control",
+    "tool": {
+      "tool_name": "Read",
+      "tool_input": {
+        "file_path": "{SBX}/.env.example"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "cat '{SBX}/.env.example'"
+    },
+    "expect": "your-key-here"
+  },
+  {
+    "id": "ctl-read-ssh-config",
+    "category": "benign control",
+    "attack": "Read of an ssh config that holds no key",
+    "check": "control",
+    "tool": {
+      "tool_name": "Read",
+      "tool_input": {
+        "file_path": "{SBX}/.ssh/config"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "cat '{SBX}/.ssh/config'"
+    },
+    "expect": "Host prod"
+  },
+  {
+    "id": "ctl-git-log-oneline",
+    "category": "benign control",
+    "attack": "Bash shows a git history summary (no patches)",
+    "check": "control",
+    "tool": {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "git -C '{SBX}/repo' log --oneline"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "git -C '{SBX}/repo' log --oneline"
+    },
+    "expect": "remove config"
+  },
+  {
+    "id": "ctl-grep-nonsecret-line",
+    "category": "benign control",
+    "attack": "Bash greps a log for a non-secret word",
+    "check": "control",
+    "tool": {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "grep startup '{SBX}/app.log'"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "grep startup '{SBX}/app.log'"
+    },
+    "expect": "INFO startup"
+  },
+  {
+    "id": "ctl-mention-var-name",
+    "category": "benign control",
+    "attack": "Bash echoes the NAME of a key variable, not its value",
+    "check": "control",
+    "tool": {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "echo 'set API_KEY in your shell first'"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "echo 'set API_KEY in your shell first'"
+    },
+    "expect": "set API_KEY in your shell first"
+  },
+  {
+    "id": "ctl-arithmetic",
+    "category": "benign control",
+    "attack": "Bash does harmless arithmetic",
+    "check": "control",
+    "tool": {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "echo $((6*7))"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "echo $((6*7))"
+    },
+    "expect": "42"
+  },
+  {
+    "id": "ctl-pwd-listing",
+    "category": "benign control",
+    "attack": "Bash lists the sandbox top level",
+    "check": "control",
+    "tool": {
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "ls '{SBX}'"
+      }
+    },
+    "run": {
+      "kind": "sh",
+      "cmd": "ls '{SBX}'"
+    },
+    "expect": "docker-compose.yml"
+  },
+  {
+    "id": "ctl-write-readme",
+    "category": "benign control",
+    "attack": "Write of an ordinary README (must not be blocked)",
+    "check": "control",
+    "tool": {
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": "{SBX}/notes/README.md",
+        "content": "# notes\n"
+      }
+    },
+    "run": {
+      "kind": "none"
+    }
+  }
+]
