@@ -30,7 +30,10 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import shlex
+import shutil
+import sys
 from typing import Callable
 
 from . import _proc
@@ -91,10 +94,70 @@ def _split_command(command: str) -> list[str]:
     return argv
 
 
+# Exit code 2 means "block" to a Claude Code hook, but it is also what Python
+# (a missing script, a bad flag) and many CLIs exit with when they CRASH. A
+# crash read as a block makes a mistyped hook path score as perfect protection,
+# so a stderr that reads like a crash rather than a reason aborts the run.
+_CRASH_SIGNS = re.compile(
+    r"^Traceback \(most recent call last\)|can't open file|: No such file or directory"
+    r"|command not found|ModuleNotFoundError|ImportError: |Cannot find module"
+    r"|^usage: |SyntaxError: |is not recognized as an internal or external command",
+    re.IGNORECASE | re.MULTILINE)
+_RUNTIMES = ("python", "node", "bash", "sh", "ruby", "perl", "deno", "bun", "php", "pwsh")
+_SCRIPT_EXT = (".py", ".js", ".mjs", ".cjs", ".ts", ".sh", ".rb", ".pl", ".php", ".ps1")
+
+
+# options after which the next word is code or a module, not a script path
+_VALUE_FLAGS = ("-c", "-e", "-m", "-p", "-r", "-W", "-X", "--eval", "--print", "--require", "--import",
+                "--loader", "--command")
+
+
+def _exists(exe: str) -> bool:
+    if os.sep in exe or "/" in exe:
+        if os.path.isfile(exe):
+            return True
+        # Windows starts "C:\\x\\hook" as hook.exe / hook.cmd; do not reject what it would run
+        exts = os.environ.get("PATHEXT", "").split(";") if os.name == "nt" else []
+        return any(os.path.isfile(exe + e) for e in exts if e)
+    return shutil.which(exe) is not None
+
+
+def _preflight(argv: list[str]) -> None:
+    """Fail early, in plain words, when the command cannot possibly work."""
+    exe = argv[0]
+    if not _exists(exe):
+        raise ProfileError(f"exec command not found: {exe}")
+    base = os.path.basename(exe).lower()
+    if base.endswith(".exe"):
+        base = base[:-4]
+    if any(base.startswith(r) for r in _RUNTIMES):
+        for arg in argv[1:]:
+            if arg in _VALUE_FLAGS or arg.startswith(("--eval=", "--command=")):
+                break  # inline code or a module follows; not a file we can check
+            if arg.startswith("-"):
+                continue
+            if (("/" in arg or os.sep in arg) or arg.lower().endswith(_SCRIPT_EXT)) \
+                    and not os.path.isfile(arg):
+                raise ProfileError(
+                    f"hook script not found: {arg} (a relative path is looked up from "
+                    f"the folder you ran keycanary in: {os.getcwd()})")
+            break
+
+
 def _load_exec(command: str) -> Profile:
+    try:
+        argv = _split_command(command)
+    except ValueError as exc:
+        raise ProfileError(f"cannot parse exec command: {exc}") from exc
+    if not argv:
+        raise ProfileError("exec: needs a command, e.g. exec:'my-hook --flag'")
+    return _load_exec_argv(argv)
+
+
+def _load_exec_argv(argv: list[str]) -> Profile:
     """Score any external tool that implements the Claude Code hook protocol.
 
-    ``command`` is split with shlex (no shell is involved) and run once per
+    The command is split with shlex (no shell is involved) and run once per
     event. It receives one JSON object on stdin, with the common fields Claude
     Code sends (``session_id``, ``transcript_path``, ``cwd``, ``permission_mode``,
     ``tool_use_id``) plus:
@@ -109,7 +172,10 @@ def _load_exec(command: str) -> Profile:
     ``ask`` and ``defer`` hand the decision to a person, so they are NOT counted
     as blocked; the result says so. For PostToolUse it replaces the output by
     printing ``{"hookSpecificOutput": {"updatedToolOutput": {...same shape...}}}``.
-    Any other exit code, a timeout, oversize output or unparseable stdout aborts
+    Exit 2 whose error text reads like a crash (a traceback, "can't open file",
+    "command not found", a usage line) is NOT a block: it aborts the run, so a
+    mistyped hook path can never score as perfect protection. Any other exit
+    code, a timeout, oversize output or unparseable stdout also aborts
     the run with ProfileError rather than scoring as a pass. (Claude Code itself
     treats those as non-blocking and lets the call run; aborting is the strict,
     fail-closed choice for a benchmark.)
@@ -119,12 +185,7 @@ def _load_exec(command: str) -> Profile:
     told the secret (to fingerprint it) can be, and CLAUDE_PROJECT_DIR is the
     sandbox, as Claude Code exports it.
     """
-    try:
-        argv = _split_command(command)
-    except ValueError as exc:
-        raise ProfileError(f"cannot parse exec command: {exc}") from exc
-    if not argv:
-        raise ProfileError("exec: needs a command, e.g. exec:'my-hook --flag'")
+    _preflight(argv)
     state: dict = {"env": None, "sbx": None, "n": 0}
 
     def prepare(sbx) -> None:  # type: ignore[no-untyped-def]
@@ -156,6 +217,11 @@ def _load_exec(command: str) -> Profile:
             raise ProfileError("exec command printed more than "
                                f"{EXEC_MAX_OUTPUT} bytes; refusing to score it")
         if done.returncode == 2:
+            if _CRASH_SIGNS.search(done.stderr[:4000]):
+                raise ProfileError(
+                    "exec command exited 2 and its error output reads like a crash, not a "
+                    f"deliberate block (refusing to count it as protection): "
+                    f"{done.stderr.strip().splitlines()[0][:120]}")
             return {"_exit2": (done.stderr or done.stdout or "denied").strip()}
         if done.returncode != 0:
             raise ProfileError(f"exec command exited {done.returncode}: "
@@ -296,6 +362,10 @@ def _load_stuntkey_full() -> Profile:
     return profile
 
 
+EXAMPLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "examples")
+EXAMPLES = {"example-naive-hook": "naive_hook.py", "example-literal-masker": "literal_masker.py"}
+
+
 def get(name: str) -> Profile:
     """Return the profile by name, or raise KeyError for an unknown name. The
     stuntkey profiles raise ImportError when StuntKey is not importable, and
@@ -310,9 +380,12 @@ def get(name: str) -> Profile:
         return _load_stuntkey_hook()
     if name == "stuntkey-full":
         return _load_stuntkey_full()
+    if name in EXAMPLES:  # shipped with the package, so a pip install can run them
+        return _load_exec_argv([sys.executable, os.path.join(EXAMPLE_DIR, EXAMPLES[name])])
     if name.startswith("exec:"):
         return _load_exec(name[len("exec:"):])
     raise KeyError(name)
 
 
-AVAILABLE = ("none", "deny-all", "mask-all", "stuntkey-hook", "stuntkey-full", "exec:<command>")
+AVAILABLE = ("none", "deny-all", "mask-all", "example-naive-hook", "example-literal-masker",
+             "stuntkey-hook", "stuntkey-full", "exec:<command>")

@@ -9,16 +9,23 @@ clearly-fake canary secret (`sk-canary-<random>`, unique per run) planted in a
 throwaway sandbox.
 
 ```bash
-git clone https://github.com/calasdan-sketch/keycanary && cd keycanary
-python -m keycanary                                  # score an unprotected setup (about 2 seconds)
-python -m keycanary --profile "exec:my-hook --flag"  # score ANY tool (see below)
+# from a copy of this folder (unzipped, or checked out); nothing else needed
+python -m keycanary                                  # score an unprotected setup (a few seconds)
+python -m keycanary --profile example-literal-masker # a RANKABLE example score, ships with the package
+python -m keycanary --profile "exec:my-hook --flag"  # score YOUR tool (see below)
 python -m keycanary --explain read-env               # what one probe does
 python -m keycanary --format json -o report.json
+
+# or install it, then the same commands work as `keycanary ...`
+pip install .                                        # run inside the folder; add -e for development
 ```
 
-Python 3.10+, standard library only. Whether `pipx run keycanary` works depends on
-the package being published to PyPI, which this README cannot promise; the
-checkout above is the tested path.
+Python 3.11, 3.12 and 3.13 were run for this release; 3.10 is the declared
+minimum and is covered only by the CI definition, not by a run here. Standard
+library only. keycanary has not been published to PyPI, so `pip install
+keycanary` and `pipx run keycanary` do not work yet; install from the folder as
+above. This README does not link a source repository because whether it is
+public is not settled.
 
 No dependencies. No network. No account. It plants its own canaries and deletes
 them. The environment handed to every probe is minimal: your real environment
@@ -89,17 +96,20 @@ percent-encoding, `\uXXXX` / `\xNN` escapes, HTML numeric entities, decimal
 character codes, and zlib/gzip (decompression is capped at 2 MB per stream, so a
 zip bomb cannot exhaust memory; base32 runs over 256 KB are skipped). Only
 mostly-printable decodings are followed. XOR, a custom cipher, more than three
-layers, a secret split across separate tool calls, or a partial prefix of the
-key are not searched for. A clean result means "not found in these forms",
+layers, or a secret split across separate tool calls are not searched for. A
+fragment of 8 or more characters of the key's random part counts as a leak
+(`fragment`), since it is enough to find or guess the rest; shorter pieces do
+not. A clean result means "not found in these forms",
 never "safe".
 
 ## Score any tool: the `exec:` adapter
 
 Anything that speaks the Claude Code hook protocol can be scored, in any
-language, without touching this repo:
+language, without touching keycanary's code:
 
 ```bash
-python -m keycanary --profile "exec:python examples/naive_hook.py"
+python -m keycanary --profile "exec:python path/to/my_hook.py"
+python -m keycanary --profile example-naive-hook     # a bundled regex blocker, to see the output
 ```
 
 The command gets one JSON event on stdin: `PreToolUse` with `tool_name` and
@@ -117,7 +127,11 @@ as read on 2026-11-07; Claude Code can change them.
 
 The hook runs with a minimal environment: `HOME` is the sandbox,
 `CLAUDE_PROJECT_DIR` is the sandbox, and `KEYCANARY_CANARY` holds this run's
-canary for tools that must be told the secret. Any other exit code, a timeout
+canary for tools that must be told the secret. A hook that exits 2 with error
+text that reads like a crash (a Python traceback, "can't open file", "command not
+found", a usage line) is **not** a block: python and argparse exit 2 when they
+fail, so a mistyped hook path would otherwise score as perfect protection. It
+aborts the run instead, as does a script path that does not exist. Any other exit code, a timeout
 (`--hook-timeout`, default 10 s), more than 1 MB of output, or non-JSON output
 **aborts the run** (exit 2): a broken adapter never scores as "no leaks". This
 is stricter than Claude Code, which treats those as non-blocking errors and lets
@@ -127,9 +141,9 @@ it are two events (the `Write`, then the `Bash`), as an agent would emit them;
 the evasion probes that set something up first (a symlink, a copy) are likewise
 two events, and the hook sees the second without the file name in it.
 
-`examples/naive_hook.py` is a regex blocker (not rankable: it also blocks the
-harmless controls). `examples/literal_masker.py` masks only the exact key, so it
-is rankable and shows what the encoded suite catches: it stops every probe that
+`example-naive-hook` (`keycanary/examples/naive_hook.py`) is a regex blocker (not
+rankable: it also blocks the harmless controls). `example-literal-masker`
+(`keycanary/examples/literal_masker.py`) masks only the exact key, so it is rankable and shows what the encoded suite catches: it stops every probe that
 prints the key as-is and none that print it base64'd, reversed or upper-cased.
 
 ## In CI
@@ -147,7 +161,11 @@ keycanary --list
 ```
 
 Exit codes: 0 pass, 1 a gate failed, 2 the setup is broken (unknown profile,
-adapter crash, altered probe set, baseline from a different probe set). Every
+adapter crash, altered probe set, baseline from a different probe set, a
+baseline file that is not a keycanary report), 130 interrupted with Ctrl-C. A
+leak gate (`--fail-on-leak`, `--max-leaked`, `--min-protection`) also fails when
+a harmless control was denied or altered: a hook that blocks everything cannot
+pass CI. (`--suite core` has no controls, so it cannot tell.) Every
 JSON report records the keycanary version, a SHA-256 of the probe definitions,
 the platform and Python, so scores are only compared when they used the same
 probes. Text coming from a profile (a block reason) is stripped of terminal
@@ -165,8 +183,8 @@ against that file. Single profile: `keycanary --profile <name> --suite <suite>`.
 | Profile | core: blocked / masked / leaked / n/a | encoded leaked (of 17) | controls ok (of 14) | rankable |
 |---|---|---|---|---|
 | `none` | 0 / 0 / **61** / 9 | **17** | 14 | yes |
-| `exec:` literal masker (`examples/`) | 0 / 55 / **6** / 9 | **17** | 14 | yes |
-| `exec:` naive regex hook (`examples/`) | 25 / 0 / **37** / 8 | **1** | 12 | no |
+| `exec:` literal masker (`example-literal-masker`) | 0 / 55 / **6** / 9 | **17** | 14 | yes |
+| `exec:` naive regex hook (`example-naive-hook`) | 25 / 0 / **37** / 8 | **1** | 12 | no |
 | `deny-all` (reference cheat) | 70 / 0 / 0 / 0 | 0 | **0** | no |
 | `mask-all` (reference cheat) | 0 / 55 / 6 / 9 | 0 | **1** | no |
 
@@ -184,7 +202,7 @@ encoded leaked, `stuntkey-full` 46 / 15 / 0 / 0. They were **not re-run** on the
 current set because StuntKey was not installed where this round ran, so those
 old figures should not be compared with the table above.
 
-Run time on the machine that produced the table: about 1 second for the built-in
+Run time on the machine that produced the table: a few seconds for the built-in
 profiles, 7 to 10 seconds for an `exec:` hook written in Python (each probe costs
 one or two process starts, so it scales with your hook's start-up time).
 
@@ -256,7 +274,8 @@ Profiles that would be useful and do not exist yet:
 4. **The scores above were produced by the commands above**, on the platform
    stated, and nothing else. `python bench/run.py --check` re-measures them.
 5. **A score is only comparable when the controls pass.** Denying everything is
-   not protection.
+   not protection, and a hook that crashes is not a hook that blocks: both stop a
+   CI gate instead of passing it.
 
 ## Limits
 
@@ -276,6 +295,10 @@ Known gaps in this benchmark itself:
 - The Windows paths (Git bash lookup, `taskkill`, quote stripping) are covered
   by unit tests that fake the platform and by the CI matrix definition, not by a
   Windows run in this round.
+- A `--suite core` run has no controls, so a hook that denies every call cannot be
+  told apart from a perfect one there. Run the default (all suites) in CI.
+- A secret split across separate tool calls, and a key re-typed by a model from
+  memory in a form not listed above, are not caught.
 - `xxd`, `ps`, `git`, `rg` and similar must be installed for their probes to
   count; otherwise they are `n/a`.
 - The two StuntKey profiles were not re-run on the current probe set.
@@ -283,5 +306,5 @@ Known gaps in this benchmark itself:
   benchmark. Scores are for a tool run as shipped; the `exec:` adapter cannot tell.
 
 MIT. Built by [Calas Automations Inc.](https://calasautomations.com) alongside
-[stuntkey](https://github.com/calasdan-sketch/stuntkey), which is one of the
-profiles it scores and does not win every row.
+StuntKey, Calas Automations' credential broker, which is one of the profiles it
+scores and does not win every row.

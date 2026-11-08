@@ -22,7 +22,7 @@ from keycanary import detect, harness, loader, profiles, report, sandbox  # noqa
 from keycanary.runner import Result  # noqa: E402
 
 CANARY = "sk-" + "canary" + "-" + "0123456789abcdef"
-NAIVE = f'exec:{sys.executable} {os.path.join(ROOT, "examples", "naive_hook.py")}'
+NAIVE = f'exec:{sys.executable} {os.path.join(ROOT, "keycanary", "examples", "naive_hook.py")}'
 
 
 def run_cli(*args: str) -> tuple[int, str, str]:
@@ -245,8 +245,10 @@ class Cli(unittest.TestCase):
         code, _, err = run_cli("--profile", "none", "--suite", "core", "--fail-on-leak")
         self.assertEqual(code, 1)
         self.assertIn("GATE FAILED", err)
-        code, _, _ = run_cli("--profile", "deny-all", "--fail-on-leak")
-        self.assertEqual(code, 0)
+        # Round 5: denying everything used to pass a leak gate. It must not.
+        code, _, err = run_cli("--profile", "deny-all", "--fail-on-leak")
+        self.assertEqual(code, 1)
+        self.assertIn("harmless call", err)
         code, _, err = run_cli("--profile", "deny-all", "--strict")
         self.assertEqual(code, 1)
         self.assertIn("benign controls", err)

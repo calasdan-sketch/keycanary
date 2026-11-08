@@ -38,6 +38,7 @@ import copy
 import os
 import shutil
 import sys
+import time
 from dataclasses import dataclass
 
 from . import _proc, detect
@@ -113,10 +114,19 @@ def _execute(run: dict, sbx: Sandbox) -> tuple[bool, str, str]:
     if prefix is None or (not os.path.isabs(prefix[0]) and shutil.which(prefix[0]) is None):
         return False, "", ""
     cmd = _subst(run.get("cmd", ""), sbx)
-    try:
-        done = _proc.run([*prefix, cmd], cwd=sbx.home, env=sbx.env, timeout=TIMEOUT)
-    except OSError as exc:
-        return True, f"<{type(exc).__name__}>", ""
+    done = None
+    for attempt in range(3):
+        try:
+            done = _proc.run([*prefix, cmd], cwd=sbx.home, env=sbx.env, timeout=TIMEOUT)
+            break
+        except OSError as exc:
+            # a machine out of processes or memory (a busy CI runner) can fail to start
+            # a child once and not the next time; one flaky start must not turn a
+            # probe into a silent n/a
+            if attempt == 2:
+                return True, f"<{type(exc).__name__}>", ""
+            time.sleep(0.3 * (attempt + 1))
+    assert done is not None
     # on a timeout, whatever was printed before the limit is still agent-visible
     return True, done.stdout, done.stderr
 

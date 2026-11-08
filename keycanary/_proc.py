@@ -95,15 +95,19 @@ def run(argv: list[str], *, input_text: str | None = None, cwd: str | None = Non
         feeder.start()
     timed_out = False
     deadline = time.monotonic() + timeout
-    while proc.poll() is None:
-        if over:  # output cap exceeded: no reason to keep waiting
-            break
-        if time.monotonic() >= deadline:
-            timed_out = True
-            break
-        time.sleep(0.01)
-    # even on a clean exit, a leftover background child must not outlive the call
-    _kill_group(proc)
+    try:
+        while proc.poll() is None:
+            if over:  # output cap exceeded: no reason to keep waiting
+                break
+            if time.monotonic() >= deadline:
+                timed_out = True
+                break
+            time.sleep(0.01)
+    finally:
+        # even on a clean exit, a leftover background child must not outlive the
+        # call; and Ctrl-C (the child has its own process group, so the terminal
+        # does not signal it) must not leave the hook running
+        _kill_group(proc)
     try:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:

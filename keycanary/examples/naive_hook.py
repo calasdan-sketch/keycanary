@@ -1,6 +1,6 @@
 """A deliberately naive hook, to show the ``exec:`` adapter end to end.
 
-    python -m keycanary --profile "exec:python examples/naive_hook.py"
+    python -m keycanary --profile example-naive-hook
 
 It denies shell commands that mention an env file or dump the environment, and
 does nothing on PostToolUse. Expect it to stop the obvious probes and miss the

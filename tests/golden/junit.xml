@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="keycanary demo" tests="6" failures="2" skipped="1">
+  <properties><property name="tool" value="keycanary {VERSION}"/><property name="author" value="Calas Automations Inc."/></properties>
+  <testcase classname="encoded" name="b64-env-output">
+  </testcase>
+  <testcase classname="benign control" name="ctl-echo">
+  </testcase>
+  <testcase classname="benign control" name="ctl-ls">
+    <failure message="overblocked">benign call denied: &lt;&amp;&gt; "x"</failure>
+  </testcase>
+  <testcase classname="env dumps" name="env-dump">
+    <failure message="leaked">canary in agent-visible output (plain)</failure>
+  </testcase>
+  <testcase classname="keystore" name="keychain-read">
+    <skipped message="tool missing"/>
+  </testcase>
+  <testcase classname="direct file read" name="read-env">
+  </testcase>
+</testsuite>

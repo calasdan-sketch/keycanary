@@ -1,6 +1,6 @@
 """A deliberately simple output masker, to show what a RANKABLE score looks like.
 
-    python -m keycanary --profile "exec:python examples/literal_masker.py"
+    python -m keycanary --profile example-literal-masker
 
 It blocks nothing. On PostToolUse it replaces the exact secret it was told about
 (the KEYCANARY_CANARY variable) with ***. That stops every probe that prints the

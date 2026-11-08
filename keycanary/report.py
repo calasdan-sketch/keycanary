@@ -14,7 +14,7 @@ import sys
 from collections import Counter
 from xml.sax.saxutils import escape, quoteattr
 
-from . import __version__
+from . import __author__, __version__
 from .runner import Result
 
 STATUSES = ("blocked", "masked", "leaked", "n/a")
@@ -91,7 +91,8 @@ def by_category(results: list[Result]) -> dict[str, dict[str, int]]:
 
 
 def meta(probe_hash: str | None = None, repeat: int = 1, partial: bool = False) -> dict:
-    return {"keycanary": __version__, "probe_set_sha256": probe_hash,
+    return {"keycanary": __version__, "author": __author__, "report_format": 1,
+            "probe_set_sha256": probe_hash,
             "python": platform.python_version(), "platform": sys.platform,
             "repeat": repeat, "partial": partial}
 
@@ -150,7 +151,8 @@ def to_table(results: list[Result], profile: str) -> str:
                      + (f"   ({row['n/a']} n/a)" if row["n/a"] else ""))
     gaps = sorted(clean(r.probe_id) for r in _leak(results) if r.status == "leaked")
     if gaps:
-        lines += ["", f"GAPS (leaked, {len(gaps)}): " + ", ".join(gaps)]
+        lines += ["", f"GAPS (leaked, {len(gaps)}): " + ", ".join(gaps),
+                  "  see how a gap works with: keycanary --explain <id>"]
     bad = sorted(clean(r.probe_id) for r in _controls(results) if r.status in ("overblocked", "altered"))
     if bad:
         lines += ["", f"BROKEN CONTROLS ({len(bad)}): " + ", ".join(bad)]
@@ -179,7 +181,9 @@ def to_junit(results: list[Result], profile: str) -> str:
     skips = sum(1 for r in results if r.status == "n/a")
     lines = ['<?xml version="1.0" encoding="UTF-8"?>',
              f'<testsuite name={quoteattr("keycanary " + clean(profile))} '
-             f'tests="{len(results)}" failures="{fails}" skipped="{skips}">']
+             f'tests="{len(results)}" failures="{fails}" skipped="{skips}">',
+             f'  <properties><property name="tool" value={quoteattr("keycanary " + __version__)}/>'
+             f'<property name="author" value={quoteattr(__author__)}/></properties>']
     for r in sorted(results, key=lambda x: x.probe_id):
         lines.append(f'  <testcase classname={quoteattr(clean(r.category))} '
                      f'name={quoteattr(clean(r.probe_id))}>')
@@ -202,10 +206,16 @@ def to_sarif(results: list[Result], profile: str) -> str:
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
         "runs": [{
-            "tool": {"driver": {"name": "keycanary", "version": __version__, "rules": rules}},
+            "tool": {"driver": {"name": "keycanary", "version": __version__,
+                                "organization": __author__, "rules": rules}},
             "results": [{
                 "ruleId": clean(r.probe_id), "level": "error",
                 "message": {"text": f"[{clean(profile)}] {r.status}: {clean(r.detail)}"},
+                # not a file in your repo: the probe that found it. Whether GitHub code
+                # scanning accepts a result with only a logical location is unverified.
+                "locations": [{"logicalLocations": [{"name": clean(r.probe_id), "kind": "member"}]}],
+                "properties": {"profile": clean(profile), "status": r.status,
+                               "category": clean(r.category)},
             } for r in bad],
         }],
     }, indent=2)

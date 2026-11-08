@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
 import sys
 
-from . import __version__, harness, profiles, report
+from . import __author__, __version__, harness, profiles, report
 from .loader import SUITES, ProbeSetError, load, probe_set_hash
 
 EXIT_OK, EXIT_GATE, EXIT_SETUP = 0, 1, 2
@@ -16,13 +18,21 @@ def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="keycanary",
         description="Score a secret-protection setup against ways an AI coding "
-                    "agent can expose an API key.")
+                    "agent can expose an API key.",
+        epilog="examples:\n"
+               "  keycanary                                   score an unprotected setup\n"
+               "  keycanary --profile example-literal-masker  see a rankable score (ships with the package)\n"
+               "  keycanary --profile \"exec:./my-hook\" --fail-on-leak   score your own hook, for CI\n"
+               "  keycanary --explain read-env                what one probe does\n"
+               "exit codes: 0 pass, 1 a gate failed, 2 the setup is broken (the run was not scored)",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--profile", default="none",
                    help="none | deny-all | mask-all | stuntkey-hook | stuntkey-full | "
+                        "example-naive-hook | example-literal-masker | "
                         "exec:<command> (any tool speaking the Claude Code hook protocol)")
     p.add_argument("--suite", choices=("all",) + SUITES, default="all",
                    help="which probes to run (default: all)")
-    p.add_argument("--version", action="version", version=f"keycanary {__version__}")
+    p.add_argument("--version", action="version", version=f"keycanary {__version__} ({__author__})")
     p.add_argument("--only", metavar="ID[,ID...]",
                    help="run just these probes (a partial run: marked as such in JSON, and "
                         "not comparable with a full one)")
@@ -70,10 +80,16 @@ def _explain(p) -> str:  # type: ignore[no-untyped-def]
 def _gates(args, results, unstable, probe_hash) -> list[str]:  # type: ignore[no-untyped-def]
     problems: list[str] = []
     s = report.summary(results)
+    m = report.metrics(results)
     limit = 0 if args.fail_on_leak and args.max_leaked is None else args.max_leaked
     if limit is not None and s["leaked"] > limit:
         problems.append(f"{s['leaked']} probes leaked (limit {limit})")
-    m = report.metrics(results)
+    # A leak gate passed by denying or blanking everything is not a pass: the
+    # benchmark's own rule is that a score only counts when the controls hold.
+    gated = limit is not None or args.min_protection is not None
+    if gated and any(r.suite == "control" for r in results) and m["controls_broken"]:
+        problems.append(f"{m['controls_broken']} harmless call(s) were denied or altered, so the "
+                        "low leak count does not count (see BROKEN CONTROLS)")
     if args.min_protection is not None:
         rate = m["protection_rate"]
         if rate is None or rate * 100 < args.min_protection:
@@ -89,11 +105,17 @@ def _gates(args, results, unstable, probe_hash) -> list[str]:  # type: ignore[no
     if args.baseline:
         with open(args.baseline, encoding="utf-8") as fh:
             base = json.load(fh)
-        base_hash = (base.get("meta") or {}).get("probe_set_sha256")
+        if not isinstance(base, dict) or not isinstance(base.get("results"), list):
+            raise ValueError("baseline is not a keycanary --format json report")
+        base_hash = (base.get("meta") or {}).get("probe_set_sha256") \
+            if isinstance(base.get("meta"), dict) else None
         if base_hash != probe_hash:
             raise ValueError("baseline was produced with a different probe set; "
                              "re-record it before comparing")
-        was = {r["probe_id"]: r["status"] for r in base.get("results", [])}
+        try:
+            was = {r["probe_id"]: r["status"] for r in base["results"]}
+        except (KeyError, TypeError) as exc:
+            raise ValueError("baseline results are not in keycanary's format") from exc
         new = sorted(r.probe_id for r in results
                      if r.status == "leaked" and was.get(r.probe_id) != "leaked")
         if new:
@@ -101,7 +123,43 @@ def _gates(args, results, unstable, probe_hash) -> list[str]:  # type: ignore[no
     return problems
 
 
+def _safe_streams() -> None:
+    """Never die with a traceback because the console cannot show a character
+    (a legacy Windows code page, LANG=C): unshowable characters print as ?."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+def _terminate(_signum, _frame):  # type: ignore[no-untyped-def]
+    raise KeyboardInterrupt  # one clean-up path for Ctrl-C and for a CI "cancel"
+
+
 def main(argv: list[str] | None = None) -> int:
+    _safe_streams()
+    if hasattr(signal, "SIGTERM"):
+        try:
+            signal.signal(signal.SIGTERM, _terminate)
+        except ValueError:  # not the main thread (embedded use)
+            pass
+    try:
+        return _main(argv)
+    except KeyboardInterrupt:
+        print("interrupted; nothing was scored", file=sys.stderr)
+        return 130
+    except BrokenPipeError:
+        # `keycanary | head`: the reader went away. Say nothing, and keep Python from
+        # complaining again while it flushes stdout at exit.
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except (OSError, ValueError, AttributeError):
+            pass
+        return 141
+
+
+def _main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.json:
         args.format = "json"
@@ -175,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         problems = _gates(args, results, unstable, phash)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, UnicodeDecodeError) as exc:
         print(f"gate error: {report.clean(exc)}", file=sys.stderr)
         return EXIT_SETUP
     for line in problems:

@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "keycanary",
+          "version": "{VERSION}",
+          "organization": "Calas Automations Inc.",
+          "rules": [
+            {
+              "id": "ctl-ls",
+              "shortDescription": {
+                "text": "benign control"
+              }
+            },
+            {
+              "id": "env-dump",
+              "shortDescription": {
+                "text": "env dumps"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "ctl-ls",
+          "level": "error",
+          "message": {
+            "text": "[demo] overblocked: benign call denied: <&> \"x\""
+          },
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "name": "ctl-ls",
+                  "kind": "member"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "profile": "demo",
+            "status": "overblocked",
+            "category": "benign control"
+          }
+        },
+        {
+          "ruleId": "env-dump",
+          "level": "error",
+          "message": {
+            "text": "[demo] leaked: canary in agent-visible output (plain)"
+          },
+          "locations": [
+            {
+              "logicalLocations": [
+                {
+                  "name": "env-dump",
+                  "kind": "member"
+                }
+              ]
+            }
+          ],
+          "properties": {
+            "profile": "demo",
+            "status": "leaked",
+            "category": "env dumps"
+          }
+        }
+      ]
+    }
+  ]
+}

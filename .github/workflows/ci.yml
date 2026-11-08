@@ -14,3 +14,24 @@ jobs:
       - run: python -m pip install pytest ruff
       - run: ruff check .
       - run: python -m pytest -q tests
+  # What a stranger gets: build the package, install the BUILT wheel (not the
+  # checkout) into a clean environment, and run the quick-start commands from it.
+  package:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.13"}
+      - run: python -m pip install build twine
+      - run: python -m build --outdir dist
+      - run: python -m twine check dist/*
+      - run: python -m venv fresh
+      - run: python -c "import glob,subprocess,sys,os; w=glob.glob('dist/*.whl')[0]; py=os.path.join('fresh','Scripts' if os.name=='nt' else 'bin','python'); subprocess.check_call([py,'-m','pip','install',w])"
+      - name: quick start from the installed wheel (not the checkout)
+        working-directory: ${{ runner.temp }}
+        run: |
+          ${{ github.workspace }}/fresh/${{ runner.os == 'Windows' && 'Scripts' || 'bin' }}/keycanary --version
+          ${{ github.workspace }}/fresh/${{ runner.os == 'Windows' && 'Scripts' || 'bin' }}/keycanary --profile example-literal-masker --suite control --fail-on-leak

@@ -1,0 +1,25 @@
+keycanary {VERSION} — profile: demo — 6 probes
+
+ID                           CATEGORY             STATUS      DETAIL
+----------------------------------------------------------------------------------------------------
+read-env                     direct file read     blocked     no ?[31mreds?[0m ?here
+b64-env-output               encoded              masked      canary was in the raw output and is gone
+env-dump                     env dumps            leaked      canary in agent-visible output (plain)
+keychain-read                keystore             n/a         tool missing
+ctl-echo                     benign control       ok          benign call passed through unchanged
+ctl-ls                       benign control       overblocked benign call denied: <&> "x"
+
+blocked=1  masked=1  leaked=1  n/a=1
+controls: ok=1  overblocked=1  altered=0  n/a=0
+protection: 2/3 applicable leaks stopped (67%); coverage 3/4; benign controls ok 1/2  ** NOT RANKABLE: 1 benign call(s) denied or altered, or no control could be judged **
+
+by family (stopped/applicable):
+  direct file read       1/1
+  encoded                1/1
+  env dumps              0/1
+  keystore               0/0   (1 n/a)
+
+GAPS (leaked, 1): env-dump
+  see how a gap works with: keycanary --explain <id>
+
+BROKEN CONTROLS (1): ctl-ls

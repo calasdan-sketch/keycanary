@@ -12,5 +12,6 @@ blocks every probe here can still be bypassed by a model that builds its
 command at run time. See README.md for method and limits.
 """
 
-__all__ = ["__version__"]
+__all__ = ["__version__", "__author__"]
 __version__ = "0.2.0"
+__author__ = "Calas Automations Inc."

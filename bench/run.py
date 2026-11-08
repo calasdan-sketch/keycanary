@@ -27,8 +27,8 @@ PROFILES = {
     "none": "none",
     "deny-all": "deny-all",
     "mask-all": "mask-all",
-    "exec: naive regex hook": f"exec:{PY} {os.path.join(ROOT, 'examples', 'naive_hook.py')}",
-    "exec: literal masker": f"exec:{PY} {os.path.join(ROOT, 'examples', 'literal_masker.py')}",
+    "exec: naive regex hook": f"exec:{PY} {os.path.join(ROOT, 'keycanary', 'examples', 'naive_hook.py')}",
+    "exec: literal masker": f"exec:{PY} {os.path.join(ROOT, 'keycanary', 'examples', 'literal_masker.py')}",
 }
 
 

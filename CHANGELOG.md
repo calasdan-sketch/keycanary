@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.2.0 (unreleased), round 5
+
+Reviewed again as a honeytoken/secrets-leak engineer, an AppSec incident
+responder and a docs/DX writer, plus a packaging pass (the "stranger's first
+hour") because this package has never been published. Details and the commands
+that proved each finding: `docs/ROUND5.md`. Probe set unchanged (70 / 17 / 14);
+committed scores unchanged.
+
+### Fixed
+- **A crashed hook scored as perfect protection.** Python exits 2 for a missing
+  script, and argparse exits 2 on a bad flag; 2 also means "block" to a hook, so
+  `--profile "exec:python typo.py" --fail-on-leak` printed 14 "overblocked" rows
+  and exited 0. A script path that does not exist, or exit 2 with error text that
+  reads like a crash (traceback, "can't open file", "command not found", a usage
+  line), now aborts the run (exit 2) with a plain message.
+- **A hook that denies everything passed leak gates.** `--fail-on-leak`,
+  `--max-leaked` and `--min-protection` now also fail when a harmless control was
+  denied or altered. *Behaviour change*: `--profile deny-all --fail-on-leak` used
+  to exit 0 and now exits 1. Core-only runs have no controls and are unchanged.
+- The examples were not in the wheel or the sdist, so the README's
+  `exec:python examples/naive_hook.py` could not work after `pip install`. They
+  now ship inside the package (`keycanary/examples/`) and run as
+  `--profile example-naive-hook` / `example-literal-masker`.
+- A console that cannot show a character (`PYTHONIOENCODING=ascii`, legacy
+  Windows code pages) crashed the table with a traceback; unshowable characters
+  now print as `?`.
+- Ctrl-C printed a traceback and left the hook process running (it has its own
+  process group); a CI cancel (SIGTERM) left the sandbox folder behind. Now both:
+  a one-line message, exit 130, the hook is killed, the sandbox is removed.
+- A probe whose child process failed to start once (a runner out of processes or
+  memory) became a silent `n/a`; the start is now retried twice. (Seen once as a
+  test flake on a heavily loaded machine; the cause was not proven.)
+- `keycanary | head` printed a BrokenPipeError traceback; now silent, exit 141.
+- `--baseline` with a file that is not a keycanary report (a JSON list, rows
+  without `probe_id`, bytes that are not UTF-8) crashed; now exit 2 with a message.
+
+### Added
+- **Fragment detection**: 8 or more characters of the key's random part in the
+  output now count as a leak (`fragment`). A masker that hides only half the key
+  used to score as masked. Reported only after every whole-key form failed, so no
+  earlier verdict changed.
+- `--version` and reports name the maintainer, Calas Automations Inc.
+  (`__author__`, JSON `meta.author` and `meta.report_format`, SARIF
+  `organization`, JUnit properties). SARIF results carry a logical location and
+  properties. The table points at `--explain <id>` under the gaps.
+- `--help` shows examples and the exit codes.
+- Tests: property-style (seeded) and differential tests of the judge, mutation-style
+  sanity tests, golden files for table / markdown / JUnit / SARIF / JSON,
+  hostile-environment CLI runs, an author-line pin, a version-consistency pin.
+- CI: a `package` job builds the wheel, installs it into a clean environment and
+  runs the quick start from there.
+- `py.typed`; `MANIFEST.in` (CHANGELOG, bench, docs, tests go into the sdist).
+
+### Changed
+- The package metadata no longer lists source/issue URLs: whether the repository
+  is public is not settled, and a package page must not link somewhere a stranger
+  cannot open. The README no longer shows a `git clone` line. Add the URLs back to
+  `pyproject.toml` when it is public.
+- Python 3.11, 3.12 and 3.13 classifiers added (those were run); 3.10 remains the
+  declared minimum and was not run.
+
+### Known limits
+- Windows and macOS were not run. StuntKey profiles still not re-run.
+- SARIF has not been uploaded to GitHub code scanning; whether it accepts a result
+  with only a logical location is unverified.
+
 ## 0.2.0 (unreleased), round 3
 
 Reviewed again as an attacker, a hook-protocol engineer, a process/CI reliability

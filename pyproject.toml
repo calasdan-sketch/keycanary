@@ -26,6 +26,10 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
     "Topic :: Security",
 ]
 # No runtime dependencies. The benchmark must be runnable by anyone scoring any
@@ -37,19 +41,18 @@ dependencies = []
 # `none` baseline, runs with the standard library alone.
 stuntkey = ["stuntkey>=0.9.0"]
 
-[project.urls]
-Homepage = "https://github.com/calasdan-sketch/keycanary"
-Source = "https://github.com/calasdan-sketch/keycanary"
-Issues = "https://github.com/calasdan-sketch/keycanary/issues"
+# No project-URLs table on purpose: whether the source repository is public is not
+# settled, and a package page must not link to a repository a stranger cannot open.
+# Add Homepage/Source/Issues here once it is. (tests/test_round5.py guards this.)
 
 [project.scripts]
 keycanary = "keycanary.__main__:main"
 
 [tool.setuptools]
-packages = ["keycanary"]
+packages = ["keycanary", "keycanary.probes", "keycanary.examples"]
 
 [tool.setuptools.package-data]
-keycanary = ["probes/*.json"]
+keycanary = ["probes/*.json", "examples/*.py", "py.typed"]
 
 [tool.ruff]
 line-length = 110

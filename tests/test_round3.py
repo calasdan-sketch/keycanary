@@ -70,7 +70,7 @@ class WiderJudge(unittest.TestCase):
     def test_no_false_positives_on_ordinary_output(self):
         text = ("INFO listening on :8080\nBearer " + "a" * 40 + "\n"
                 + base64.b64encode(b"hello world, nothing to see here").decode()
-                + "\n" + "0123456789abcdef" * 4 + "\nsk-live-notthecanary-0123\n")
+                + "\n" + "fedcba9876543210" * 4 + "\nsk-live-notthecanary-0123\n")
         self.assertIsNone(detect.find_leak(text, CANARY))
 
     def test_zip_bomb_is_bounded(self):
@@ -183,7 +183,7 @@ class ExecProtocol(unittest.TestCase):
                              ["C:\\Program Files\\x\\h.exe", "--flag"])
 
     def test_example_masker_is_rankable_and_leaves_the_encoded_gap(self):
-        cmd = f"exec:{sys.executable} {os.path.join(ROOT, 'examples', 'literal_masker.py')}"
+        cmd = f"exec:{sys.executable} {os.path.join(ROOT, 'keycanary', 'examples', 'literal_masker.py')}"
         results = harness.run(cmd)
         self.assertTrue(report.metrics(results)["rankable"])
         st = {r.probe_id: r.status for r in results}
