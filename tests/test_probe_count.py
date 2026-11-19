@@ -4,7 +4,7 @@ import unittest
 
 from keycanary import loader
 
-EXPECTED = 61
+EXPECTED = 64
 
 
 class ProbeCount(unittest.TestCase):

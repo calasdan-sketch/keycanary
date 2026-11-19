@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "keycanary"
 version = "0.1.0"
-description = "A vendor-neutral benchmark of 61 ways an AI coding agent can leak an API key. Scores any protection setup, names the leaks it cannot stop."
+description = "A benchmark (by the author of StuntKey, not independently reviewed) of 64 ways an AI coding agent can leak an API key. Scores any protection setup, names the leaks it cannot stop."
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Calas Automations Inc." }]

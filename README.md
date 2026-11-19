@@ -1,6 +1,6 @@
 # keycanary
 
-**A benchmark of 61 ways an AI coding agent can leak an API key, written by the author of stuntkey (one of the tools it scores). Not independently reviewed.**
+**A benchmark of 64 ways an AI coding agent can leak an API key, written by the author of stuntkey (one of the tools it scores). Not independently reviewed.**
 
 Your agent reads a `.env`. It runs a bare `env` buried in a compound command. It
 prints a traceback holding a token. It follows an instruction someone planted in
@@ -74,15 +74,15 @@ another.
 that beat the profiles already here.** A benchmark whose author always wins is
 not a benchmark.
 
-Profiles included, scored 2026-11-19 on Windows (`python -m keycanary --profile <name> [--canary opaque]`; 61 probes, the rest of the
+Profiles included, scored 2026-11-19 on Windows (`python -m keycanary --profile <name> [--canary opaque]`; 64 probes, the rest of the
 64-probe count in the stuntkey repo are its extras). **The author of this benchmark also wrote stuntkey, so read its rows as a claim to
 re-run, not a result to trust.**
 
 | Profile | What it models | Leaked (default key) | Leaked (`--canary opaque`) |
 |---|---|---|---|
-| `none` | nothing | 54 | 52 |
-| `claude-env-deny` | Claude Code's documented `deny Read(./.env)` + `Read(./.env.*)` rules. **Modelled from the docs**: it covers the file tools only, so every shell route still leaks. It also blocks `.env.example`. | 50 | 48 |
-| `detect-secrets` (varies run to run: we saw 16 to 26 leaks; the entropy rules react to the random key, so do not quote it as a stable score) | Yelp's scanner wired as a pre-call and post-output hook. **Modelled**: it has no official agent integration. It does not recognise the default `sk-canary-` format, so its score comes from other planted secrets in the same output. | 25 | 23 |
+| `none` | nothing | 57 | 55 |
+| `claude-env-deny` | Claude Code's documented `deny Read(./.env)` + `Read(./.env.*)` rules. **Modelled from the docs**: it covers the file tools only, so every shell route still leaks. It also blocks `.env.example`. | 53 | 51 |
+| `detect-secrets` (varies run to run: we saw 23 to 41 leaks (19 to 24 with the opaque key); the entropy rules react to the random key, so do not quote it as a stable score) | Yelp's scanner wired as a pre-call and post-output hook. **Modelled**: it has no official agent integration. It does not recognise the default `sk-canary-` format, so its score comes from other planted secrets in the same output. | 23 to 41 | 19 to 24 |
 | `stuntkey-hook` | stuntkey's Claude Code hook | 2 | 2 |
 | `stuntkey-full` | the hook plus spending caps | 0 | 0 |
 
@@ -116,7 +116,7 @@ This benchmark does not measure over-blocking: a profile that denies every call 
 These are simulated tool calls against a pretend filesystem and a pretend
 server. They do not exercise a live network layer, a real model, or a real
 agent harness, and they cannot show that nothing else can go wrong. A profile
-that scores well here has passed 61 specific, public checks — no more than that.
+that scores well here has passed 64 specific, public checks — no more than that.
 
 MIT. Built by [Calas Automations Inc.](https://calasautomations.com) alongside
 [stuntkey](https://github.com/calasdan-sketch/stuntkey), which is one of the
