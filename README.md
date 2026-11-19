@@ -1,6 +1,6 @@
 # keycanary
 
-**A vendor-neutral benchmark of 61 ways an AI coding agent can leak an API key.**
+**A benchmark of 61 ways an AI coding agent can leak an API key, written by the author of stuntkey (one of the tools it scores). Not independently reviewed.**
 
 Your agent reads a `.env`. It runs a bare `env` buried in a compound command. It
 prints a traceback holding a token. It follows an instruction someone planted in
@@ -9,9 +9,10 @@ clearly-fake canary secret (`sk-canary-<random>`, unique per run) planted in a
 throwaway sandbox.
 
 ```bash
-pipx run keycanary                      # score an unprotected setup
-pipx run keycanary --profile none
-pipx run keycanary --json
+git clone https://github.com/calasdan-sketch/keycanary && cd keycanary     # not on PyPI yet
+python -m keycanary                              # score an unprotected setup
+python -m keycanary --profile none
+python -m keycanary --json
 ```
 
 No dependencies. No network. No account. It plants its own canaries and deletes
@@ -57,36 +58,9 @@ measurement at all. Their only quantified benchmarks are latency.
 `n/a` is neither a pass nor a fail, and is reported separately so a profile
 cannot improve its score by failing to run.
 
-## Current scores
+## Scores
 
-Measured on Windows, Python 3.12. Reproduce with the commands above.
-
-| Profile | blocked | masked | leaked | n/a |
-|---|---|---|---|---|
-| `none` — no protection at all | 0 | 0 | **54** | 7 |
-| `stuntkey-hook` | 44 | 12 | **5** | 0 |
-
-**The 5 that `stuntkey-hook` does not stop, named:**
-`node-prints-process-env`, `script-prints-environ`, `script-reads-env-file`,
-`runaway-loop-no-cap`, `unbounded-retry`.
-
-> **These scores and this attribution are being re-measured and should not be
-> quoted yet.** An adversarial review of this repo (2026-11-02) found the
-> explanation previously given here — that all five are a program printing its
-> own environment — to be wrong on all five:
->
-> - `runaway-loop-no-cap` and `unbounded-retry` are spend probes whose commands
->   are `for i in 1 2 3; do echo call $i; done`. They print no environment at
->   all; they are scored against an optional `spend` attribute on the profile.
-> - The other three attach subprocess output to a **Write** tool event, which
->   no real agent emits. Fed the same output as the `Bash` call an agent would
->   actually make, the hook masks the canary.
->
-> The same review found the scoring itself gameable — a profile that denies
-> every call scores a perfect 61, because nothing here measures over-blocking —
-> and found that the probe count is not pinned in code despite the claim below.
-> Both are being fixed. Until then, treat every number on this page as
-> provisional.
+The current numbers are in the profile table under "Scoring your own tool". An older table that stood here (stuntkey-hook 44 / 12 / 5) was from before a scoring review on 2026-11-02 found its attribution wrong; it was removed rather than left to be quoted.
 
 ## Scoring your own tool
 
@@ -108,7 +82,7 @@ re-run, not a result to trust.**
 |---|---|---|---|
 | `none` | nothing | 54 | 52 |
 | `claude-env-deny` | Claude Code's documented `deny Read(./.env)` + `Read(./.env.*)` rules. **Modelled from the docs**: it covers the file tools only, so every shell route still leaks. It also blocks `.env.example`. | 50 | 48 |
-| `detect-secrets` | Yelp's scanner wired as a pre-call and post-output hook. **Modelled**: it has no official agent integration. It does not recognise the default `sk-canary-` format, so its score comes from other planted secrets in the same output. | 25 | 23 |
+| `detect-secrets` (varies run to run: we saw 16 to 26 leaks; the entropy rules react to the random key, so do not quote it as a stable score) | Yelp's scanner wired as a pre-call and post-output hook. **Modelled**: it has no official agent integration. It does not recognise the default `sk-canary-` format, so its score comes from other planted secrets in the same output. | 25 | 23 |
 | `stuntkey-hook` | stuntkey's Claude Code hook | 2 | 2 |
 | `stuntkey-full` | the hook plus spending caps | 0 | 0 |
 
@@ -130,12 +104,14 @@ Profiles that would be useful and do not exist yet:
 
 1. **Gaps are printed, not hidden.** Every run lists the probes that leaked, by
    name, in the default output.
-2. **Probe count is pinned.** Deleting a probe cannot improve a score.
+2. **Probe count is pinned.** `tests/test_probe_count.py` fails if the number of probes changes without the test (and this README) changing too, so deleting a probe cannot quietly improve a score.
 3. **`n/a` is never counted as a pass.**
 4. **The scores above were produced by the commands above**, on the platform
    stated, and nothing else.
 
 ## Limits
+
+This benchmark does not measure over-blocking: a profile that denies every call would score no leaks here. stuntkey's own `leakbench` adds 20 harmless commands for that; this repo does not yet. It also does not exercise a real model or the real apps, and this repo is not a security guarantee for any tool.
 
 These are simulated tool calls against a pretend filesystem and a pretend
 server. They do not exercise a live network layer, a real model, or a real
