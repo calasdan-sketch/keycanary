@@ -18,7 +18,15 @@ from dataclasses import dataclass
 
 
 def new_canary() -> str:
-    """A unique, obviously-fake secret for one benchmark run."""
+    """A unique, obviously-fake secret for one benchmark run.
+
+    ``prefixed`` (default): ``sk-canary-<hex>``, which looks like an API key, so tools that recognise key FORMATS can find it.
+    ``opaque`` (KEYCANARY_CANARY=opaque, or ``--canary opaque``): ``kc<32 hex>``, no prefix and no recognisable format, like a
+    key from a provider no pattern list knows. A scanner that only matches known formats scores much worse on it, which is the
+    point: it shows how much of a tool's score comes from recognising the key rather than from keeping it away.
+    """
+    if os.environ.get("KEYCANARY_CANARY", "prefixed") == "opaque":
+        return "kc" + secrets.token_hex(16)
     return "sk-canary-" + secrets.token_hex(8)
 
 

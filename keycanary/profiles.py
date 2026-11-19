@@ -132,6 +132,75 @@ def _load_stuntkey_full() -> Profile:
     return profile
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Other tools. Each profile states how it was MODELLED, because a benchmark that scores a rival by a guess about how it is used
+# is only fair if the guess is written down and easy to correct. Send a pull request if a profile misrepresents a tool.
+# ---------------------------------------------------------------------------------------------------------------------
+
+_FILE_TOOLS = {"Read", "Edit", "Write", "MultiEdit", "NotebookEdit", "Glob", "Grep"}
+
+
+def _is_dotenv(name: str) -> bool:
+    """The two rules Claude Code's docs recommend, ``Read(./.env)`` and ``Read(./.env.*)``. The second also matches
+    ``.env.example``, so this profile over-blocks it (a real cost of that rule, shown by the harmless probes)."""
+    base = os.path.basename(name.replace("\\", "/").rstrip("/"))
+    return base == ".env" or base.startswith(".env.")
+
+
+def _profile_claude_env_deny() -> Profile:
+    """Claude Code's built-in permission rules ``deny: ["Read(./.env)", "Read(./.env.*)"]``, the setup its own docs recommend for
+    keeping secrets out of the agent. MODELLED from the documented behaviour: the rule covers Claude's FILE tools (Read, Edit,
+    Glob, Grep) when the path names a .env file. It does NOT cover what a shell command reads (``cat .env``, ``env``,
+    ``printenv``): that is the documented limit, so Bash calls pass. No output masking, no scanning of anything else."""
+    def profile(payload: dict) -> tuple[bool, str | None]:
+        if payload.get("tool_name") not in _FILE_TOOLS:
+            return False, None
+        ti = payload.get("tool_input") or {}
+        for key in ("file_path", "path", "pattern", "notebook_path"):
+            v = ti.get(key)
+            if isinstance(v, str) and _is_dotenv(v):
+                return True, "permission rule denies reading .env files"
+        return False, None
+    return profile
+
+
+def _detect_secrets_flags(text: str) -> bool:
+    """True when the ``detect-secrets`` command-line tool (Yelp, plugin-based scanner) flags the text. ``scan --string`` runs every
+    plugin on one string and prints which ones matched. Raises ImportError if the tool is not installed, so the harness marks the
+    profile skipped rather than guess."""
+    import shutil
+    import subprocess
+    exe = shutil.which("detect-secrets")
+    if not exe:
+        raise ImportError("detect-secrets is not on PATH (pipx install detect-secrets)")
+    r = subprocess.run([exe, "scan", "--string", text], capture_output=True, text=True, timeout=30)
+    return r.returncode == 0 and "True" in (r.stdout or "")
+
+
+def _load_detect_secrets() -> Profile:
+    """A secret SCANNER used as an agent hook: detect-secrets reads each tool call before it runs (block when it finds a secret in
+    the command or its arguments) and each tool's output afterwards (replace it when it finds one). MODELLED: detect-secrets has no
+    official agent integration, so this is how a team would plausibly wire a scanner, not a product feature. It only sees what its
+    patterns recognise; a command that merely READS a file (``cat .env``) contains no secret, so it passes, and the output is what
+    gets scanned. This is the typical limit of any detect-by-pattern approach and is what the benchmark is meant to show."""
+    _detect_secrets_flags("probe")      # fail fast (ImportError) when the tool is missing
+
+    def profile(payload: dict) -> tuple[bool, str | None]:
+        text = json.dumps(payload.get("tool_input") or {}, ensure_ascii=False)
+        if _detect_secrets_flags(text):
+            return True, "detect-secrets found a secret in the tool call"
+        return False, None
+
+    def post(payload: dict, response: dict) -> dict:
+        out = chr(10).join(str(response.get(k) or "") for k in ("stdout", "stderr"))
+        if out.strip() and _detect_secrets_flags(out):
+            return {**response, "stdout": "[redacted] output withheld: detect-secrets found a secret", "stderr": ""}
+        return response
+
+    profile.post = post  # type: ignore[attr-defined]
+    return profile
+
+
 def get(name: str) -> Profile:
     """Return the profile by name, or raise. The stuntkey profiles raise
     ImportError when StuntKey is not importable."""
@@ -141,7 +210,11 @@ def get(name: str) -> Profile:
         return _load_stuntkey_hook()
     if name == "stuntkey-full":
         return _load_stuntkey_full()
+    if name == "claude-env-deny":
+        return _profile_claude_env_deny()
+    if name == "detect-secrets":
+        return _load_detect_secrets()
     raise KeyError(name)
 
 
-AVAILABLE = ("none", "stuntkey-hook", "stuntkey-full")
+AVAILABLE = ("none", "stuntkey-hook", "stuntkey-full", "claude-env-deny", "detect-secrets")

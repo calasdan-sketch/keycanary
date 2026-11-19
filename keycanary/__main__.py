@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from . import harness, profiles, report
@@ -15,9 +16,12 @@ def main(argv: list[str] | None = None) -> int:
                     "against ways an AI coding agent can expose an API key.")
     parser.add_argument("--profile", default="none", choices=profiles.AVAILABLE,
                         help="protection profile to score (default: none)")
+    parser.add_argument("--canary", default="prefixed", choices=("prefixed", "opaque"),
+                        help="prefixed: the secret looks like an API key (default); opaque: no recognisable format")
     parser.add_argument("--json", action="store_true",
                         help="emit JSON instead of a table")
     args = parser.parse_args(argv)
+    os.environ["KEYCANARY_CANARY"] = args.canary
 
     try:
         results = harness.run(args.profile)
