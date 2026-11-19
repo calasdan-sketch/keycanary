@@ -100,6 +100,23 @@ another.
 that beat the profiles already here.** A benchmark whose author always wins is
 not a benchmark.
 
+Profiles included, scored 2026-11-19 on Windows (`python -m keycanary --profile <name> [--canary opaque]`; 61 probes, the rest of the
+64-probe count in the stuntkey repo are its extras). **The author of this benchmark also wrote stuntkey, so read its rows as a claim to
+re-run, not a result to trust.**
+
+| Profile | What it models | Leaked (default key) | Leaked (`--canary opaque`) |
+|---|---|---|---|
+| `none` | nothing | 54 | 52 |
+| `claude-env-deny` | Claude Code's documented `deny Read(./.env)` + `Read(./.env.*)` rules. **Modelled from the docs**: it covers the file tools only, so every shell route still leaks. It also blocks `.env.example`. | 50 | 48 |
+| `detect-secrets` | Yelp's scanner wired as a pre-call and post-output hook. **Modelled**: it has no official agent integration. It does not recognise the default `sk-canary-` format, so its score comes from other planted secrets in the same output. | 25 | 23 |
+| `stuntkey-hook` | stuntkey's Claude Code hook | 2 | 2 |
+| `stuntkey-full` | the hook plus spending caps | 0 | 0 |
+
+Not scored, and why: `ggshield` (needs an account), `gitleaks` and `trufflehog` (not run), 1Password, Doppler and Infisical (they publish
+no leak measurement and have no profile here yet). `--canary opaque` plants a key with no recognisable format, to show how much of a
+tool's score comes from recognising the key rather than keeping it away. A profile's modelling is written in `profiles.py` and pinned by
+`tests/test_rival_profiles.py`; a pull request that models a tool more faithfully is welcome.
+
 Profiles that would be useful and do not exist yet:
 
 - `claude-code-sandbox-mask` — Anthropic's built-in `sandbox.credentials`
