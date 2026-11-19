@@ -12,7 +12,7 @@ authors = [{ name = "Calas Automations Inc." }]
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 keywords = [
-    "credential-exfiltration", "credential-brokering", "secretless", "benchmark",
+    "credential-exfiltration", "benchmark",
     "api-key", "secrets", "dotenv", "env-file", "mcp", "model-context-protocol",
     "ai", "llm", "agents", "prompt-injection", "security",
 ]

@@ -15,8 +15,12 @@ python -m keycanary --profile none
 python -m keycanary --json
 ```
 
-No dependencies. No network. No account. It plants its own canaries and deletes
-them.
+The benchmark itself is standard library only. No network. No account. It plants
+its own canaries and deletes them. Scoring a profile needs that profile's tool:
+`none` and `claude-env-deny` need nothing extra; `stuntkey-hook` and
+`stuntkey-full` need the `stuntkey` package; `detect-secrets` needs the
+`detect-secrets` command (`pipx install detect-secrets`). If a profile's tool is
+missing the run prints `NOT SCORED`, no score, and exits non-zero.
 
 ## Why this exists
 
@@ -32,19 +36,17 @@ Some tools in this space do publish a number, and credit where it is due:
 - Anthropic's [`sandbox.credentials`](https://code.claude.com/docs/en/sandboxing)
   publishes no leak rate, but documents its gaps at length.
 
-What none of them publish is a probe set someone else can run. Each measures
-its own tool against no protection, which is a vendor grading itself. There is
-no shared set of probes on which a third party can score a tool the probe
-author does not own, and no way to put two protections on the same rows.
+Those harnesses are built around the tool that published them (phantom-secrets
+publishes one for its own tool). This one takes profiles for any tool: a fixed
+set of leaks, a fixed scoring rule, and an adapter system so two protections can
+be put on the same rows, including by people who do not trust, or do not use, the
+tool that happens to have written the benchmark. Whether that makes it a fairer
+yardstick is for others to judge; the probes were shaped by one author with one
+tool in mind (see Limits).
 
-That is the gap this fills: a fixed set of leaks, a fixed scoring rule, and a
-profile system so any tool can be scored on the same probes — including by
-people who do not trust, or do not use, the tool that happens to have written
-the benchmark.
-
-The enterprise secrets managers and LLM gateways — 1Password, Doppler,
-Infisical, Vault, LiteLLM, Portkey and the rest — publish no leakage
-measurement at all. Their only quantified benchmarks are latency.
+We searched for a published leakage measurement from 1Password, Doppler,
+Infisical, Vault, LiteLLM and Portkey and found none as of 2026-11-19. Tell us if
+that is wrong and we will correct it.
 
 ## Outcomes
 
@@ -60,6 +62,12 @@ cannot improve its score by failing to run.
 
 ## Scores
 
+The headline leak score counts **62 leak probes**. Two more probes (`runaway-loop-no-cap`,
+`unbounded-retry`) test *cost control* (a spending cap), not key leakage; they are
+reported in a separate "cost control" section and are not in the leak score. That
+split exists because those two only a spending-cap feature can change, and the
+probe set was written by the author of a tool that has one.
+
 The current numbers are in the profile table under "Scoring your own tool". An older table that stood here (stuntkey-hook 44 / 12 / 5) was from before a scoring review on 2026-11-02 found its attribution wrong; it was removed rather than left to be quoted.
 
 ## Scoring your own tool
@@ -74,17 +82,27 @@ another.
 that beat the profiles already here.** A benchmark whose author always wins is
 not a benchmark.
 
-Profiles included, scored 2026-11-19 on Windows (`python -m keycanary --profile <name> [--canary opaque]`; 64 probes, the rest of the
-64-probe count in the stuntkey repo are its extras). **The author of this benchmark also wrote stuntkey, so read its rows as a claim to
-re-run, not a result to trust.**
+Profiles included, scored 2026-11-19 on Windows (`python -m keycanary --profile <name> [--canary opaque]`; 64 probes: 62 leak probes in
+the score below, plus 2 cost-control probes shown after the table). A probe that cannot run on this machine under `none` is `n/a` for every
+profile. **The author of this benchmark also wrote stuntkey, so read its rows as a claim to re-run, not a result to trust.**
 
-| Profile | What it models | Leaked (default key) | Leaked (`--canary opaque`) |
-|---|---|---|---|
-| `none` | nothing | 57 | 55 |
-| `claude-env-deny` | Claude Code's documented `deny Read(./.env)` + `Read(./.env.*)` rules. **Modelled from the docs**: it covers the file tools only, so every shell route still leaks. It also blocks `.env.example`. | 53 | 51 |
-| `detect-secrets` (varies run to run: we saw 23 to 41 leaks (19 to 24 with the opaque key); the entropy rules react to the random key, so do not quote it as a stable score) | Yelp's scanner wired as a pre-call and post-output hook. **Modelled**: it has no official agent integration. It does not recognise the default `sk-canary-` format, so its score comes from other planted secrets in the same output. | 23 to 41 | 19 to 24 |
-| `stuntkey-hook` | stuntkey's Claude Code hook | 2 | 2 |
-| `stuntkey-full` | the hook plus spending caps | 0 | 0 |
+**No real rival guard that covers the shell is scored yet.** The two rows marked "baseline" are configurations the author modelled
+from documentation; they are not competing products and not evidence about any vendor.
+
+| Profile | What it models | Leaked (default key) | Leaked (`--canary opaque`) | Extra package needed |
+|---|---|---|---|---|
+| `none` | nothing | 55 | 53 | none |
+| `claude-env-deny` | **Baseline configuration modelled by the author, not a competing product.** Claude Code's documented `deny Read(./.env)` + `Read(./.env.*)` rules, from the docs: file tools only, so every shell route still leaks. It also blocks `.env.example`. | 51 | 49 | none |
+| `detect-secrets` | **Baseline configuration modelled by the author, not a competing product.** Yelp's scanner wired as a pre-call and post-output hook; it has no official agent integration. It does not recognise the default `sk-canary-` format, so its score comes from other planted secrets in the same output. Varies run to run (the random sandbox path and key change what its entropy rules flag; `--seed` fixes only the key and did not make it stable): min / median / max over 10 runs. | 17 / 21 / 32 | 17 / 19 / 24 | `detect-secrets` CLI |
+| `stuntkey-hook` | stuntkey's Claude Code hook | 0 | 0 | `stuntkey` |
+| `stuntkey-full` | the hook plus spending caps | 0 | 0 | `stuntkey` |
+
+Cost control (not in the leak score; `none`, `claude-env-deny`, `detect-secrets` and `stuntkey-hook` let both runaway-spend probes proceed, `stuntkey-full`'s
+cap stops both): shown in every run under "COST CONTROL".
+
+The `stuntkey-*` rows were run against a local checkout of stuntkey, not a pinned release. `read-stuntkey-store` keeps its id for stability but tests
+"the protection tool's own key store" (the path it reads is stuntkey's `~/.stuntkey/keys.json`; a profile for another tool would want its own path). A test
+(`tests/test_scoring_rules.py`) re-runs `none` and `claude-env-deny` and fails if their README numbers are stale.
 
 Not scored, and why: `ggshield` (needs an account), `gitleaks` and `trufflehog` (not run), 1Password, Doppler and Infisical (they publish
 no leak measurement and have no profile here yet). `--canary opaque` plants a key with no recognisable format, to show how much of a
@@ -111,7 +129,7 @@ Profiles that would be useful and do not exist yet:
 
 ## Limits
 
-This benchmark does not measure over-blocking: a profile that denies every call would score no leaks here. stuntkey's own `leakbench` adds 20 harmless commands for that; this repo does not yet. It also does not exercise a real model or the real apps, and this repo is not a security guarantee for any tool.
+This benchmark does not measure over-blocking: a profile that denies every call would score no leaks here. stuntkey's own `leakbench` adds 20 harmless commands for that; this repo does not have them, so a high score here says nothing about how often a tool breaks legitimate work. Most probes and the profile adapters were written alongside stuntkey and are shaped by one author's view of the problem. It also does not exercise a real model or the real apps, and this repo is not a security guarantee for any tool.
 
 These are simulated tool calls against a pretend filesystem and a pretend
 server. They do not exercise a live network layer, a real model, or a real

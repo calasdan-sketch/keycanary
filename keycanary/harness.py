@@ -17,6 +17,14 @@ def run(profile_name: str, probes: list[Probe] | None = None) -> list[Result]:
     profile = profiles.get(profile_name)
     sbx = sandbox.build()
     try:
-        return [run_probe(p, sbx, profile, profile_name) for p in probe_list]
+        results = [run_probe(p, sbx, profile, profile_name) for p in probe_list]
+        if profile_name == "none":
+            return results
+        # a probe that cannot reproduce on this machine under the baseline is n/a
+        # for every profile, so no profile gains a "blocked" from a missing tool
+        base = {p.id: run_probe(p, sbx, profiles.get("none"), "none").status for p in probe_list}
+        return [r if base[r.probe_id] != "n/a" else
+                Result(r.probe_id, r.category, r.profile, "n/a", "n/a on the baseline (none) profile here")
+                for r in results]
     finally:
         sandbox.destroy(sbx)

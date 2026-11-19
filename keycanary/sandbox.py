@@ -8,6 +8,7 @@ a clearly-fake canary (``sk-canary-<random>``) unique to the run.
 from __future__ import annotations
 
 import os
+import random
 import secrets
 import shutil
 import stat
@@ -25,9 +26,11 @@ def new_canary() -> str:
     key from a provider no pattern list knows. A scanner that only matches known formats scores much worse on it, which is the
     point: it shows how much of a tool's score comes from recognising the key rather than from keeping it away.
     """
+    seed = os.environ.get("KEYCANARY_SEED")  # --seed: a reproducible canary, so scanner-based profiles score the same every run
+    hexer = (lambda n: random.Random(f"{seed}/{n}").randbytes(n).hex()) if seed else secrets.token_hex
     if os.environ.get("KEYCANARY_CANARY", "prefixed") == "opaque":
-        return "kc" + secrets.token_hex(16)
-    return "sk-canary-" + secrets.token_hex(8)
+        return "kc" + hexer(16)
+    return "sk-canary-" + hexer(8)
 
 
 @dataclass(frozen=True)

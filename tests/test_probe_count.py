@@ -19,6 +19,7 @@ class ProbeCount(unittest.TestCase):
         import os
         text = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "README.md"), encoding="utf-8").read()
         self.assertIn(f"{EXPECTED} ways", text)
+        self.assertIn(f"{EXPECTED - 2} leak probes", text)
 
 
 if __name__ == "__main__":
